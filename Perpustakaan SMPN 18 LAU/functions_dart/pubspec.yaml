@@ -1,0 +1,11 @@
+name: functions_dart
+environment:
+  sdk: '>=2.18.0 <4.0.0'
+
+dependencies:
+  shelf: ^1.4.0
+  shelf_router: ^1.0.0
+  http: ^0.13.6
+  googleapis_auth: ^1.4.0
+
+# No dev dependencies needed for now
