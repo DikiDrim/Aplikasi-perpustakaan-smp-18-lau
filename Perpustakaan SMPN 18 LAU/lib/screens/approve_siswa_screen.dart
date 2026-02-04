@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/firestore_service.dart';
-import 'dart:developer' show log;
 
 class ApproveSiswaScreen extends StatefulWidget {
   const ApproveSiswaScreen({super.key});

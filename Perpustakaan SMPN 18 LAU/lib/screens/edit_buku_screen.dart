@@ -44,6 +44,7 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
   String? _currentCoverUrl;
   String? _currentCoverPublicId;
   String? _currentBookFileUrl;
+  bool _isAdmin = false;
 
   final FirestoreService _firestoreService = FirestoreService();
 
@@ -478,12 +479,12 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
         TextFormField(
           controller: _pengarangController,
           decoration: const InputDecoration(
-            labelText: 'Pengarang',
+            labelText: 'Penerbit',
             border: OutlineInputBorder(),
           ),
           validator: (value) {
             if (value == null || value.isEmpty) {
-              return 'Pengarang harus diisi';
+              return 'Penerbit harus diisi';
             }
             return null;
           },
@@ -712,21 +713,37 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
+    // Check admin status once using read (not watch to avoid rebuild issues)
+    final auth = context.read<AuthProvider>();
     final isAdmin = (auth.role == 'admin');
 
     // Proteksi: Hanya admin yang bisa akses
     if (!isAdmin) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Anda tidak memiliki izin untuk mengedit buku'),
-            backgroundColor: Colors.red,
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Akses Ditolak'),
+          backgroundColor: const Color(0xFF0D47A1),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.block, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text(
+                'Anda tidak memiliki izin untuk mengedit buku',
+                style: TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Kembali'),
+              ),
+            ],
           ),
-        );
-      });
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        ),
+      );
     }
 
     return Scaffold(
@@ -789,7 +806,7 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
                                   final ok = await showDialog<String>(
                                     context: context,
                                     builder:
-                                        (_) => AlertDialog(
+                                        (dialogContext) => AlertDialog(
                                           title: const Text('Tambah Kategori'),
                                           content: TextField(
                                             controller: ctrl,
@@ -800,13 +817,15 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
                                           actions: [
                                             TextButton(
                                               onPressed:
-                                                  () => Navigator.pop(context),
+                                                  () => Navigator.pop(
+                                                    dialogContext,
+                                                  ),
                                               child: const Text('Batal'),
                                             ),
                                             TextButton(
                                               onPressed:
                                                   () => Navigator.pop(
-                                                    context,
+                                                    dialogContext,
                                                     ctrl.text.trim(),
                                                   ),
                                               child: const Text('Simpan'),
@@ -814,9 +833,12 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
                                           ],
                                         ),
                                   );
+                                  ctrl.dispose();
                                   if (ok != null && ok.isNotEmpty) {
                                     await _service.addCategory(ok);
-                                    setState(() => _kategoriSelected = ok);
+                                    if (mounted) {
+                                      setState(() => _kategoriSelected = ok);
+                                    }
                                   }
                                 } else {
                                   setState(() => _kategoriSelected = v);
@@ -985,17 +1007,113 @@ class _ManageCategoriesModal extends StatefulWidget {
 
 class _ManageCategoriesModalState extends State<_ManageCategoriesModal> {
   late final TextEditingController _nameController;
+  late final Stream<List<String>> _categoriesStream;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController();
+    _categoriesStream = widget.service.getCategoriesStream();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _editCategory(String oldName) async {
+    final editController = TextEditingController(text: oldName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Edit Kategori'),
+            content: TextField(
+              controller: editController,
+              decoration: const InputDecoration(
+                labelText: 'Nama kategori',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Batal'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final val = editController.text.trim();
+                  if (val.isNotEmpty && val != oldName) {
+                    Navigator.pop(dialogContext, val);
+                  } else {
+                    Navigator.pop(dialogContext);
+                  }
+                },
+                child: const Text('Simpan'),
+              ),
+            ],
+          ),
+    );
+    editController.dispose();
+
+    if (newName != null && newName.isNotEmpty && mounted) {
+      await widget.service.updateCategory(oldName, newName);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Kategori berhasil diubah')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteCategory(String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Hapus kategori?'),
+            content: Text(
+              'Kategori "$name" akan dihapus dari daftar. '
+              'Buku yang memakai kategori ini tidak dihapus dan akan dipindahkan ke "Tidak Berkategori".',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Batal'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Hapus'),
+              ),
+            ],
+          ),
+    );
+
+    if (ok == true && mounted) {
+      await widget.service.deleteCategoryAndReassignBooks(name);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kategori dihapus dan buku dipindahkan'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _addCategory() async {
+    final v = _nameController.text.trim();
+    if (v.isEmpty) return;
+    await widget.service.addCategory(v);
+    if (mounted) {
+      _nameController.clear();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Kategori ditambahkan')));
+      widget.onCategoryAdded?.call(v);
+    }
   }
 
   @override
@@ -1040,18 +1158,7 @@ class _ManageCategoriesModalState extends State<_ManageCategoriesModal> {
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
-                  onPressed: () async {
-                    final v = _nameController.text.trim();
-                    if (v.isEmpty) return;
-                    await widget.service.addCategory(v);
-                    if (mounted) {
-                      _nameController.clear();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Kategori ditambahkan')),
-                      );
-                      widget.onCategoryAdded?.call(v);
-                    }
-                  },
+                  onPressed: _addCategory,
                   child: const Text('Tambah'),
                 ),
               ],
@@ -1060,8 +1167,8 @@ class _ManageCategoriesModalState extends State<_ManageCategoriesModal> {
             SizedBox(
               height: 320,
               child: StreamBuilder<List<String>>(
-                stream: widget.service.getCategoriesStream(),
-                builder: (context, snapshot) {
+                stream: _categoriesStream,
+                builder: (_, snapshot) {
                   final items = snapshot.data ?? const <String>[];
                   if (items.isEmpty) {
                     return const Center(child: Text('Belum ada kategori'));
@@ -1069,7 +1176,7 @@ class _ManageCategoriesModalState extends State<_ManageCategoriesModal> {
                   return ListView.separated(
                     itemCount: items.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
+                    itemBuilder: (_, index) {
                       final name = items[index];
                       return ListTile(
                         title: Text(name),
@@ -1081,112 +1188,14 @@ class _ManageCategoriesModalState extends State<_ManageCategoriesModal> {
                                 Icons.edit_outlined,
                                 color: Colors.blue,
                               ),
-                              onPressed: () async {
-                                final editController = TextEditingController(
-                                  text: name,
-                                );
-                                final newName = await showDialog<String>(
-                                  context: context,
-                                  builder:
-                                      (_) => AlertDialog(
-                                        title: const Text('Edit Kategori'),
-                                        content: TextField(
-                                          controller: editController,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Nama kategori',
-                                            border: OutlineInputBorder(),
-                                          ),
-                                          autofocus: true,
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed:
-                                                () => Navigator.pop(context),
-                                            child: const Text('Batal'),
-                                          ),
-                                          FilledButton(
-                                            onPressed: () {
-                                              final val =
-                                                  editController.text.trim();
-                                              if (val.isNotEmpty &&
-                                                  val != name) {
-                                                Navigator.pop(context, val);
-                                              } else {
-                                                Navigator.pop(context);
-                                              }
-                                            },
-                                            child: const Text('Simpan'),
-                                          ),
-                                        ],
-                                      ),
-                                );
-                                editController.dispose();
-                                if (newName != null && newName.isNotEmpty) {
-                                  await widget.service.updateCategory(
-                                    name,
-                                    newName,
-                                  );
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Kategori berhasil diubah',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
+                              onPressed: () => _editCategory(name),
                             ),
                             IconButton(
                               icon: const Icon(
                                 Icons.delete_outline,
                                 color: Colors.red,
                               ),
-                              onPressed: () async {
-                                final ok = await showDialog<bool>(
-                                  context: context,
-                                  builder:
-                                      (_) => AlertDialog(
-                                        title: const Text('Hapus kategori?'),
-                                        content: Text(
-                                          'Kategori "$name" akan dihapus dari daftar. '
-                                          'Buku yang memakai kategori ini tidak dihapus dan akan dipindahkan ke "Tidak Berkategori".',
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed:
-                                                () => Navigator.pop(
-                                                  context,
-                                                  false,
-                                                ),
-                                            child: const Text('Batal'),
-                                          ),
-                                          FilledButton(
-                                            onPressed:
-                                                () => Navigator.pop(
-                                                  context,
-                                                  true,
-                                                ),
-                                            child: const Text('Hapus'),
-                                          ),
-                                        ],
-                                      ),
-                                );
-                                if (ok == true) {
-                                  await widget.service
-                                      .deleteCategoryAndReassignBooks(name);
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Kategori dihapus dan buku dipindahkan',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
+                              onPressed: () => _deleteCategory(name),
                             ),
                           ],
                         ),

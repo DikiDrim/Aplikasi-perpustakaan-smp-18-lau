@@ -553,7 +553,7 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                               Icons.search,
                               color: Color(0xFF87CEEB),
                             ),
-                            helperText: 'Contoh: 222137 atau DikiDrim',
+                            helperText: 'Contoh: 222137 atau Diki',
                             helperStyle: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 11,
@@ -1202,9 +1202,9 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                           decoration: InputDecoration(
                             hintText:
                                 _unit == null
-                                    ? 'Isi angka durasi (misal: 7)'
+                                    ? 'Isi angka durasi'
                                     : (_unit == 'hari'
-                                        ? 'Contoh: 7 (untuk 7 hari)'
+                                        ? 'Contoh: 3 (untuk 3 hari)'
                                         : 'Contoh: 2 (untuk 2 jam pelajaran)'),
                             filled: true,
                             fillColor: Colors.grey[50],

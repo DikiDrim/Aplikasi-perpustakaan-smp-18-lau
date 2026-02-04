@@ -566,11 +566,14 @@ class FirestoreService {
   }
 
   // Mengembalikan buku (bisa sebagian). quantity: jumlah yang dikembalikan
+  // denda: optional hukuman jika terlambat
   Future<void> kembalikanBuku(
     String peminjamanId,
     String bukuId,
-    int quantity,
-  ) async {
+    int quantity, {
+    String? denda,
+    bool isTerlambat = false,
+  }) async {
     try {
       final docRef = _firestore
           .collection(_peminjamanCollection)
@@ -598,12 +601,19 @@ class FirestoreService {
           uidSiswa = data['uid_siswa'];
           judulBuku = data['judul_buku'];
 
-          tx.update(docRef, {
+          final updateData = <String, dynamic>{
             'jumlah_kembali': baruKembali,
             'status': status,
             'tanggal_kembali':
                 status == 'dikembalikan' ? Timestamp.now() : null,
-          });
+          };
+
+          // Tambahkan denda jika ada
+          if (denda != null && denda.isNotEmpty) {
+            updateData['denda'] = denda;
+          }
+
+          tx.update(docRef, updateData);
         });
 
         // Update stok buku
@@ -612,17 +622,35 @@ class FirestoreService {
         // Kirim notifikasi ke siswa jika ada UID
         if (uidSiswa != null && uidSiswa!.isNotEmpty && judulBuku != null) {
           final appNotificationService = AppNotificationService();
+
+          String notifTitle;
+          String notifBody;
+          String notifType;
+
+          if (isTerlambat && denda != null && denda.isNotEmpty) {
+            notifTitle = 'Buku Dikembalikan - Terlambat';
+            notifBody =
+                'Buku "$judulBuku" telah dikembalikan dengan keterlambatan.\n\nHukuman: $denda';
+            notifType = 'keterlambatan';
+          } else {
+            notifTitle = 'Buku Berhasil Dikembalikan';
+            notifBody =
+                'Buku "$judulBuku" telah berhasil dikembalikan. Terima kasih!';
+            notifType = 'pengembalian';
+          }
+
           await appNotificationService.createNotification(
             userId: uidSiswa!,
-            title: 'Buku Berhasil Dikembalikan',
-            body:
-                'Buku "$judulBuku" telah berhasil dikembalikan. Terima kasih!',
-            type: 'pengembalian',
+            title: notifTitle,
+            body: notifBody,
+            type: notifType,
             data: {
               'buku_id': bukuId,
               'judul_buku': judulBuku,
               'jumlah': quantity,
               'peminjaman_id': peminjamanId,
+              'denda': denda,
+              'is_terlambat': isTerlambat,
             },
           );
         }
@@ -648,12 +676,19 @@ class FirestoreService {
           baruKembaliA >= totalDipinjamA ? 'dikembalikan' : 'dipinjam';
 
       // Update archive doc
-      await archiveRef.update({
+      final archiveUpdateData = <String, dynamic>{
         'jumlah_kembali': baruKembaliA,
         'status': statusA,
         'tanggal_kembali': statusA == 'dikembalikan' ? Timestamp.now() : null,
         'restored_from_live_missing': true,
-      });
+      };
+
+      // Tambahkan denda jika ada
+      if (denda != null && denda.isNotEmpty) {
+        archiveUpdateData['denda'] = denda;
+      }
+
+      await archiveRef.update(archiveUpdateData);
 
       // Restore stock for the quantity being returned
       await updateStokBuku(bukuId, quantity);
@@ -664,23 +699,93 @@ class FirestoreService {
 
       if (uidSiswa != null && uidSiswa.isNotEmpty && judulBuku != null) {
         final appNotificationService = AppNotificationService();
+
+        String notifTitle;
+        String notifBody;
+        String notifType;
+
+        if (isTerlambat && denda != null && denda.isNotEmpty) {
+          notifTitle = 'Buku Dikembalikan - Terlambat';
+          notifBody =
+              'Buku "$judulBuku" telah dikembalikan dengan keterlambatan.\n\nHukuman: $denda';
+          notifType = 'keterlambatan';
+        } else {
+          notifTitle = 'Buku Berhasil Dikembalikan';
+          notifBody =
+              'Buku "$judulBuku" telah berhasil dikembalikan. Terima kasih!';
+          notifType = 'pengembalian';
+        }
+
         await appNotificationService.createNotification(
           userId: uidSiswa,
-          title: 'Buku Berhasil Dikembalikan',
-          body:
-              'Buku "${judulBuku}" telah berhasil dikembalikan. Terima kasih!',
-          type: 'pengembalian',
+          title: notifTitle,
+          body: notifBody,
+          type: notifType,
           data: {
             'buku_id': bukuId,
             'judul_buku': judulBuku,
             'jumlah': quantity,
             'peminjaman_id': peminjamanId,
             'archived': true,
+            'denda': denda,
+            'is_terlambat': isTerlambat,
           },
         );
       }
     } catch (e) {
       throw Exception('Gagal mengembalikan buku: $e');
+    }
+  }
+
+  /// Kirim notifikasi keterlambatan ke siswa
+  /// Dipanggil saat admin melihat daftar pengembalian dan ada buku yang terlambat
+  Future<void> kirimNotifikasiKeterlambatan({
+    required String peminjamanId,
+    required String uidSiswa,
+    required String judulBuku,
+    required String namaPeminjam,
+    required DateTime tanggalJatuhTempo,
+  }) async {
+    try {
+      // Update flag notifikasi di peminjaman
+      final docRef = _firestore
+          .collection(_peminjamanCollection)
+          .doc(peminjamanId);
+
+      final snap = await docRef.get();
+      if (!snap.exists) return;
+
+      final data = snap.data() as Map<String, dynamic>;
+      final alreadyNotified = data['terlambat_notified'] == true;
+
+      // Jika sudah pernah dinotifikasi, skip
+      if (alreadyNotified) return;
+
+      // Update flag
+      await docRef.update({'terlambat_notified': true});
+
+      // Hitung berapa hari terlambat
+      final now = DateTime.now();
+      final hariTerlambat = now.difference(tanggalJatuhTempo).inDays;
+
+      // Kirim notifikasi
+      final appNotificationService = AppNotificationService();
+      await appNotificationService.createNotification(
+        userId: uidSiswa,
+        title: '⚠️ Buku Terlambat Dikembalikan',
+        body:
+            'Buku "$judulBuku" telah melewati batas waktu pengembalian ${hariTerlambat > 0 ? "$hariTerlambat hari" : "beberapa jam"} yang lalu.\n\nMohon segera kembalikan buku ke perpustakaan untuk menghindari sanksi.',
+        type: 'keterlambatan',
+        data: {
+          'peminjaman_id': peminjamanId,
+          'judul_buku': judulBuku,
+          'tanggal_jatuh_tempo': Timestamp.fromDate(tanggalJatuhTempo),
+          'hari_terlambat': hariTerlambat,
+        },
+      );
+    } catch (e) {
+      // Silent fail - notifikasi tidak kritis
+      print('Gagal kirim notifikasi keterlambatan: $e');
     }
   }
 

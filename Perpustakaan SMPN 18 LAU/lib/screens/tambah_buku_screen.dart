@@ -174,7 +174,7 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
                                     final newName = await showDialog<String>(
                                       context: context,
                                       builder:
-                                          (_) => AlertDialog(
+                                          (dialogContext) => AlertDialog(
                                             title: const Text('Edit Kategori'),
                                             content: TextField(
                                               controller: editController,
@@ -187,8 +187,9 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
                                             actions: [
                                               TextButton(
                                                 onPressed:
-                                                    () =>
-                                                        Navigator.pop(context),
+                                                    () => Navigator.pop(
+                                                      dialogContext,
+                                                    ),
                                                 child: const Text('Batal'),
                                               ),
                                               FilledButton(
@@ -198,9 +199,14 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
                                                           .trim();
                                                   if (val.isNotEmpty &&
                                                       val != name) {
-                                                    Navigator.pop(context, val);
+                                                    Navigator.pop(
+                                                      dialogContext,
+                                                      val,
+                                                    );
                                                   } else {
-                                                    Navigator.pop(context);
+                                                    Navigator.pop(
+                                                      dialogContext,
+                                                    );
                                                   }
                                                 },
                                                 child: const Text('Simpan'),
@@ -242,7 +248,7 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
                                     final ok = await showDialog<bool>(
                                       context: context,
                                       builder:
-                                          (_) => AlertDialog(
+                                          (dialogContext) => AlertDialog(
                                             title: const Text(
                                               'Hapus kategori?',
                                             ),
@@ -254,7 +260,7 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
                                               TextButton(
                                                 onPressed:
                                                     () => Navigator.pop(
-                                                      context,
+                                                      dialogContext,
                                                       false,
                                                     ),
                                                 child: const Text('Batal'),
@@ -262,7 +268,7 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
                                               FilledButton(
                                                 onPressed:
                                                     () => Navigator.pop(
-                                                      context,
+                                                      dialogContext,
                                                       true,
                                                     ),
                                                 child: const Text('Hapus'),

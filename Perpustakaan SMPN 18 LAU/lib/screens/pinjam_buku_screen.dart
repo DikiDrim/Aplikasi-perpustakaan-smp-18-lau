@@ -170,7 +170,7 @@ class _PinjamBukuScreenState extends State<PinjamBukuScreen> {
                         ),
                         const SizedBox(height: 12),
                         _buildInfoRow('Judul', widget.buku.judul),
-                        _buildInfoRow('Pengarang', widget.buku.pengarang),
+                        _buildInfoRow('Penerbit', widget.buku.pengarang),
                         _buildInfoRow('Kategori', widget.buku.kategori),
                         _buildInfoRow('Tahun', widget.buku.tahun.toString()),
                         _buildInfoRow(

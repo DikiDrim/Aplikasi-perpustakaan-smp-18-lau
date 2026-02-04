@@ -12,6 +12,8 @@ class PeminjamanModel {
   final String status; // 'dipinjam', 'dikembalikan'
   final String bukuId;
   final int jumlah;
+  final String? denda; // Hukuman/denda jika terlambat
+  final bool terlambatNotified; // Apakah notifikasi keterlambatan sudah dikirim
 
   PeminjamanModel({
     this.id,
@@ -25,6 +27,8 @@ class PeminjamanModel {
     required this.status,
     required this.bukuId,
     this.jumlah = 1,
+    this.denda,
+    this.terlambatNotified = false,
   });
 
   factory PeminjamanModel.fromMap(Map<String, dynamic> map, String id) {
@@ -68,6 +72,8 @@ class PeminjamanModel {
       status: (map['status'] ?? 'pending').toString(),
       bukuId: map['buku_id'] ?? (map['book_id'] ?? ''),
       jumlah: parseInt(map['jumlah'] ?? map['qty'] ?? 1),
+      denda: map['denda'] as String?,
+      terlambatNotified: map['terlambat_notified'] == true,
     );
   }
 
@@ -87,6 +93,8 @@ class PeminjamanModel {
       'status': status,
       'buku_id': bukuId,
       'jumlah': jumlah,
+      'denda': denda,
+      'terlambat_notified': terlambatNotified,
     };
   }
 
@@ -102,6 +110,8 @@ class PeminjamanModel {
     String? status,
     String? bukuId,
     int? jumlah,
+    String? denda,
+    bool? terlambatNotified,
   }) {
     return PeminjamanModel(
       id: id ?? this.id,
@@ -115,6 +125,8 @@ class PeminjamanModel {
       status: status ?? this.status,
       bukuId: bukuId ?? this.bukuId,
       jumlah: jumlah ?? this.jumlah,
+      denda: denda ?? this.denda,
+      terlambatNotified: terlambatNotified ?? this.terlambatNotified,
     );
   }
 }

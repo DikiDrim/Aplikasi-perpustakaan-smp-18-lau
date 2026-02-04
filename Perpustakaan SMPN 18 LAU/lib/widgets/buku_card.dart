@@ -92,7 +92,7 @@ class BukuCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'oleh ${buku.pengarang}',
+                          'Penerbit: ${buku.pengarang}',
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: Colors.grey[500]),
                         ),

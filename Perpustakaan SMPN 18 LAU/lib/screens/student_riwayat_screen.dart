@@ -30,10 +30,7 @@ class _StudentRiwayatScreenState extends State<StudentRiwayatScreen> {
       appBar: AppBar(
         title: const Text(
           'Riwayat Saya',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         backgroundColor: const Color(0xFF0D47A1),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -55,15 +52,17 @@ class _StudentRiwayatScreenState extends State<StudentRiwayatScreen> {
 
           final allDocs = snapshot.data?.docs ?? [];
           // Sort by tanggal_pinjam descending (newest first)
-          final docs = allDocs.toList()
-            ..sort((a, b) {
-              final aDate = (a.data()['tanggal_pinjam'] as Timestamp?)?.toDate();
-              final bDate = (b.data()['tanggal_pinjam'] as Timestamp?)?.toDate();
-              if (aDate == null && bDate == null) return 0;
-              if (aDate == null) return 1;
-              if (bDate == null) return -1;
-              return bDate.compareTo(aDate); // descending
-            });
+          final docs =
+              allDocs.toList()..sort((a, b) {
+                final aDate =
+                    (a.data()['tanggal_pinjam'] as Timestamp?)?.toDate();
+                final bDate =
+                    (b.data()['tanggal_pinjam'] as Timestamp?)?.toDate();
+                if (aDate == null && bDate == null) return 0;
+                if (aDate == null) return 1;
+                if (bDate == null) return -1;
+                return bDate.compareTo(aDate); // descending
+              });
 
           if (docs.isEmpty) {
             return Center(
@@ -148,6 +147,29 @@ class _StudentRiwayatScreenState extends State<StudentRiwayatScreen> {
                                 isOverdue ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
+                      // Tampilkan denda jika ada
+                      if (d['denda'] != null &&
+                          (d['denda'] as String).isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Hukuman: ${d['denda']}',
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   trailing: Container(
