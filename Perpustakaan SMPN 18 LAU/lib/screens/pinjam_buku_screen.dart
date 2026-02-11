@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/buku_model.dart';
 import '../models/peminjaman_model.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
-import '../services/ars_service_impl.dart';
 import '../services/app_notification_service.dart';
 import '../utils/async_action.dart';
 import '../utils/throttle.dart';
@@ -25,9 +25,34 @@ class _PinjamBukuScreenState extends State<PinjamBukuScreen> {
   final _durasiController = TextEditingController(text: '7');
   String _unit = 'hari'; // 'jam' atau 'hari'
   final FirestoreService _firestoreService = FirestoreService();
-  final ArsService _arsService = ArsService();
   final AppNotificationService _appNotificationService =
       AppNotificationService();
+  String? _studentKelas;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStudentData();
+  }
+
+  Future<void> _loadStudentData() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (userDoc.exists && mounted) {
+        final data = userDoc.data();
+        setState(() {
+          _namaController.text = data?['nama'] ?? '';
+          _studentKelas = data?['kelas'];
+          if (_studentKelas != null && _studentKelas!.isEmpty) {
+            _studentKelas = null;
+          }
+        });
+      }
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -59,8 +84,11 @@ class _PinjamBukuScreenState extends State<PinjamBukuScreen> {
 
     await runWithLoading(context, () async {
       final dueDate = _calculateDueDate();
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
       final peminjaman = PeminjamanModel(
         namaPeminjam: _namaController.text,
+        kelas: _studentKelas,
+        uidSiswa: currentUserId,
         judulBuku: widget.buku.judul,
         tanggalPinjam: DateTime.now(),
         tanggalJatuhTempo: dueDate,
@@ -68,31 +96,26 @@ class _PinjamBukuScreenState extends State<PinjamBukuScreen> {
         bukuId: widget.buku.id!,
       );
 
-      // Simpan peminjaman
+      // Simpan peminjaman (ARS check dilakukan otomatis di dalam addPeminjaman)
       await _firestoreService.addPeminjaman(peminjaman);
 
-      // TRIGGER ARS REALTIME: Jalankan ARS saat transaksi peminjaman berhasil
-      // Parameter: stok sebelum transaksi (STOK AWAL), jumlah dipinjam
-      await _arsService.checkArsOnTransaction(
-        bukuId: widget.buku.id!,
-        stokSebelumTransaksi: widget.buku.stok,
-        jumlahDipinjam:
-            1, // Asumsi peminjaman 1 buku (bisa disesuaikan dengan input user)
-      );
-
       // Simpan notifikasi ke inbox user
-      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
       if (currentUserId != null) {
+        final kelasNotif =
+            (_studentKelas != null && _studentKelas!.isNotEmpty)
+                ? ' (Kelas: $_studentKelas)'
+                : '';
         // Notifikasi peminjaman berhasil
         await _appNotificationService.createNotification(
           userId: currentUserId,
           title: 'Peminjaman Berhasil',
           body:
-              'Anda telah meminjam buku "${widget.buku.judul}". Jatuh tempo: ${dueDate.day}/${dueDate.month}/${dueDate.year}',
+              'Anda telah meminjam buku "${widget.buku.judul}"$kelasNotif. Jatuh tempo: ${dueDate.day}/${dueDate.month}/${dueDate.year}',
           type: 'peminjaman',
           data: {
             'buku_id': widget.buku.id,
             'judul_buku': widget.buku.judul,
+            'kelas': _studentKelas,
             'tanggal_jatuh_tempo': dueDate.toIso8601String(),
           },
         );

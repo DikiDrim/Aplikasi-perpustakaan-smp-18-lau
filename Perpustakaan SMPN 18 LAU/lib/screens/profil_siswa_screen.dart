@@ -24,6 +24,24 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
 
+  String? _selectedKelas;
+
+  // Daftar kelas SMP
+  final List<String> _kelasList = [
+    'VII-A',
+    'VII-B',
+    'VII-C',
+    'VII-D',
+    'VIII-A',
+    'VIII-B',
+    'VIII-C',
+    'VIII-D',
+    'IX-A',
+    'IX-B',
+    'IX-C',
+    'IX-D',
+  ];
+
   User? _currentUser;
   Map<String, dynamic>? _userData;
   String? _photoUrl;
@@ -68,6 +86,10 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
         _emailController.text = _userData!['email'] ?? '';
         _photoUrl = _userData!['photo_url'];
         _photoPublicId = _userData!['photo_public_id'];
+        _selectedKelas = _userData!['kelas'];
+        if (_selectedKelas != null && _selectedKelas!.isEmpty) {
+          _selectedKelas = null;
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -179,21 +201,30 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
       // Upload foto jika ada gambar baru
       if (_selectedImage != null) {
         final imageFile = XFile(_selectedImage!.path);
+
+        // Selalu upload sebagai file baru (tanpa publicId lama)
+        // agar tidak gagal jika preset Cloudinary tidak izinkan overwrite
         final result = await _cloudinaryService.uploadImageToCloudinary(
           imageFile,
-          _photoPublicId, // Jika ada publicId lama, akan di-overwrite
+          null,
         );
 
         newPhotoUrl = result?['url'];
         newPhotoPublicId = result?['publicId'];
 
-        // Hapus foto lama jika ada publicId baru (berarti bukan overwrite)
-        if (_photoPublicId != null && _photoPublicId != newPhotoPublicId) {
-          await _cloudinaryService.deleteImageByPublicId(_photoPublicId!);
+        // Hapus foto lama jika berhasil upload foto baru
+        if (_photoPublicId != null &&
+            _photoPublicId!.isNotEmpty &&
+            newPhotoPublicId != null) {
+          try {
+            await _cloudinaryService.deleteImageByPublicId(_photoPublicId!);
+          } catch (_) {
+            // Abaikan error hapus foto lama, yang penting foto baru sudah terupload
+          }
         }
       }
 
-      // Update data di Firestore - HANYA foto, nama TIDAK diubah
+      // Update data di Firestore - foto dan kelas
       await FirebaseFirestore.instance
           .collection('users')
           .doc(_currentUser!.uid)
@@ -201,6 +232,7 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
             // 'nama': TIDAK diupdate - siswa tidak bisa mengubah nama
             'photo_url': newPhotoUrl,
             'photo_public_id': newPhotoPublicId,
+            'kelas': _selectedKelas ?? '',
             'updated_at': FieldValue.serverTimestamp(),
           });
 
@@ -217,6 +249,7 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
           // 'nama': TIDAK diupdate - siswa tidak bisa mengubah nama
           'photo_url': newPhotoUrl,
           'photo_public_id': newPhotoPublicId,
+          'kelas': _selectedKelas ?? '',
           'updated_at': FieldValue.serverTimestamp(),
         });
       }
@@ -260,54 +293,57 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
 
       pdf.addPage(
         pw.Page(
-          // Setengah halaman A4 (A5 landscape)
-          pageFormat: PdfPageFormat.a5,
+          pageFormat: PdfPageFormat.a4,
           build: (pw.Context context) {
             return pw.Padding(
-              padding: const pw.EdgeInsets.all(24),
+              padding: const pw.EdgeInsets.all(40),
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  // Header
                   pw.Center(
                     child: pw.Column(
                       children: [
                         pw.Text(
                           'PERPUSTAKAAN SMPN 18 LAU',
                           style: pw.TextStyle(
-                            fontSize: 14,
+                            fontSize: 20,
                             fontWeight: pw.FontWeight.bold,
                           ),
                         ),
-                        pw.SizedBox(height: 4),
+                        pw.SizedBox(height: 8),
                         pw.Text(
                           'Data Anggota Perpustakaan',
                           style: pw.TextStyle(
-                            fontSize: 12,
+                            fontSize: 16,
                             fontWeight: pw.FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  pw.SizedBox(height: 16),
+                  pw.SizedBox(height: 30),
                   pw.Divider(),
-                  pw.SizedBox(height: 12),
-                  // Data Siswa - Username di atas NIS, tanpa Email
+                  pw.SizedBox(height: 20),
                   _buildPdfInfoRow('Nama Lengkap', _userData!['nama'] ?? '-'),
-                  pw.SizedBox(height: 8),
-                  _buildPdfInfoRow('Username', _userData!['username'] ?? '-'),
-                  pw.SizedBox(height: 8),
+                  pw.SizedBox(height: 12),
                   _buildPdfInfoRow('NIS', _userData!['nis'] ?? '-'),
-                  pw.SizedBox(height: 16),
+                  pw.SizedBox(height: 12),
+                  _buildPdfInfoRow(
+                    'Kelas',
+                    (_selectedKelas != null && _selectedKelas!.isNotEmpty)
+                        ? _selectedKelas!
+                        : '-',
+                  ),
+                  pw.SizedBox(height: 12),
+                  _buildPdfInfoRow('Username', _userData!['username'] ?? '-'),
+                  pw.SizedBox(height: 30),
                   pw.Divider(),
-                  pw.SizedBox(height: 8),
-                  // Footer
+                  pw.SizedBox(height: 20),
                   pw.Align(
                     alignment: pw.Alignment.centerRight,
                     child: pw.Text(
                       'Dicetak pada: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
-                      style: const pw.TextStyle(fontSize: 8),
+                      style: const pw.TextStyle(fontSize: 10),
                     ),
                   ),
                 ],
@@ -468,6 +504,28 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
               ),
               enabled: false, // Email tidak bisa diubah
             ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedKelas,
+              decoration: const InputDecoration(
+                labelText: 'Kelas',
+                hintText: 'Pilih kelas',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.class_),
+                helperText: 'Ubah kelas saat naik kelas',
+                helperStyle: TextStyle(fontSize: 12),
+              ),
+              items:
+                  _kelasList.map((kelas) {
+                    return DropdownMenuItem<String>(
+                      value: kelas,
+                      child: Text(kelas),
+                    );
+                  }).toList(),
+              onChanged: (value) {
+                setState(() => _selectedKelas = value);
+              },
+            ),
             const SizedBox(height: 24),
             // Tombol Print Data Anggota
             ElevatedButton.icon(
@@ -503,7 +561,7 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Hanya foto profil yang dapat diubah. Untuk mengubah nama, hubungi admin.',
+                      'Anda dapat mengubah foto profil dan kelas. Untuk mengubah nama, hubungi admin.',
                       style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                     ),
                   ),
@@ -512,14 +570,10 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed:
-                  (_saving || _selectedImage == null) ? null : _saveProfile,
+              onPressed: _saving ? null : _saveProfile,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor:
-                    _selectedImage == null
-                        ? Colors.grey
-                        : const Color(0xFF0D47A1),
+                backgroundColor: const Color(0xFF0D47A1),
               ),
               child:
                   _saving
@@ -531,11 +585,9 @@ class _ProfilSiswaScreenState extends State<ProfilSiswaScreen> {
                           strokeWidth: 2,
                         ),
                       )
-                      : Text(
-                        _selectedImage == null
-                            ? 'Pilih foto terlebih dahulu'
-                            : 'Simpan Foto Profil',
-                        style: const TextStyle(fontSize: 16),
+                      : const Text(
+                        'Simpan Perubahan',
+                        style: TextStyle(fontSize: 16),
                       ),
             ),
           ],

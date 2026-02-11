@@ -7,6 +7,7 @@ class SiswaModel {
   final String username; // Format: 3 huruf nama + 3 digit (contoh: reh001)
   final String email;
   final String uid; // Firebase Auth UID
+  final String kelas; // Kelas siswa (VII-A, VIII-B, dll)
   final DateTime createdAt;
 
   SiswaModel({
@@ -16,6 +17,7 @@ class SiswaModel {
     required this.username,
     required this.email,
     required this.uid,
+    this.kelas = '',
     required this.createdAt,
   });
 
@@ -26,6 +28,7 @@ class SiswaModel {
       'username': username,
       'email': email,
       'uid': uid,
+      'kelas': kelas,
       'created_at': Timestamp.fromDate(createdAt),
     };
   }
@@ -51,6 +54,7 @@ class SiswaModel {
       username: map['username'] ?? '',
       email: map['email'] ?? '',
       uid: map['uid'] ?? '',
+      kelas: map['kelas'] ?? '',
       createdAt: createdAt,
     );
   }

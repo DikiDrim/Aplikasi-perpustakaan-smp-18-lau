@@ -26,9 +26,8 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
   late final TextEditingController _judulController;
   late final TextEditingController _pengarangController;
   late final TextEditingController _tahunController;
-  late final TextEditingController _tahunPembelianController;
+  late final TextEditingController _isbnController;
   late final TextEditingController _stokController;
-  late final TextEditingController _hargaSatuanController;
   late final TextEditingController _kategoriController;
   late final TextEditingController _deskripsiController;
   late final TextEditingController _bookFileUrlController;
@@ -40,11 +39,9 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
   bool _isUploadingBookFile = false;
   String? _kategoriSelected;
   late final FirestoreService _service;
-  double _totalHarga = 0;
   String? _currentCoverUrl;
   String? _currentCoverPublicId;
   String? _currentBookFileUrl;
-  bool _isAdmin = false;
 
   final FirestoreService _firestoreService = FirestoreService();
 
@@ -59,13 +56,8 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
     _tahunController = TextEditingController(
       text: widget.buku.tahun.toString(),
     );
-    _tahunPembelianController = TextEditingController(
-      text: widget.buku.tahunPembelian?.toString() ?? '',
-    );
+    _isbnController = TextEditingController(text: widget.buku.isbn ?? '');
     _stokController = TextEditingController(text: widget.buku.stok.toString());
-    _hargaSatuanController = TextEditingController(
-      text: widget.buku.hargaSatuan?.toString() ?? '',
-    );
     _kategoriController = TextEditingController();
     _deskripsiController = TextEditingController(
       text: widget.buku.deskripsi ?? '',
@@ -79,10 +71,6 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
     _currentCoverUrl = widget.buku.coverUrl;
     _currentCoverPublicId = widget.buku.coverPublicId;
     _currentBookFileUrl = widget.buku.bookFileUrl;
-    _totalHarga = widget.buku.totalHarga ?? 0;
-
-    _stokController.addListener(_recalculateTotal);
-    _hargaSatuanController.addListener(_recalculateTotal);
   }
 
   @override
@@ -90,22 +78,12 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
     _judulController.dispose();
     _pengarangController.dispose();
     _tahunController.dispose();
-    _tahunPembelianController.dispose();
+    _isbnController.dispose();
     _stokController.dispose();
-    _hargaSatuanController.dispose();
     _kategoriController.dispose();
     _deskripsiController.dispose();
     _bookFileUrlController.dispose();
     super.dispose();
-  }
-
-  void _recalculateTotal() {
-    final int stok = int.tryParse(_stokController.text) ?? 0;
-    final double harga =
-        double.tryParse(_hargaSatuanController.text.replaceAll(',', '.')) ?? 0;
-    setState(() {
-      _totalHarga = stok * harga;
-    });
   }
 
   void _openManageCategories() {
@@ -321,22 +299,18 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
             _deskripsiController.text.isEmpty
                 ? null
                 : _deskripsiController.text,
-        tahunPembelian:
-            _tahunPembelianController.text.isEmpty
-                ? null
-                : int.parse(_tahunPembelianController.text),
-        hargaSatuan:
-            _hargaSatuanController.text.isEmpty
-                ? null
-                : double.parse(
-                  _hargaSatuanController.text.replaceAll(',', '.'),
-                ),
-        totalHarga: _totalHarga == 0 ? null : _totalHarga,
+        isbn: _isbnController.text.isEmpty ? null : _isbnController.text,
         coverUrl: coverUrl,
         coverPublicId: coverPublicId,
         totalPeminjaman: widget.buku.totalPeminjaman,
         bookFileUrl:
             finalBookFileUrl, // Use the final URL (existing or newly uploaded)
+        // Preserve ARS-related fields from original book
+        isArsEnabled: widget.buku.isArsEnabled,
+        safetyStock: widget.buku.safetyStock,
+        stokMinimum: widget.buku.stokMinimum,
+        stokAwal: widget.buku.stokAwal,
+        arsNotified: widget.buku.arsNotified,
       );
 
       // Update buku
@@ -898,39 +872,12 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
               ),
               const SizedBox(height: 16),
               TextFormField(
-                controller: _tahunPembelianController,
+                controller: _isbnController,
                 decoration: const InputDecoration(
-                  labelText: 'Tahun Pembelian (opsional)',
+                  labelText: 'ISBN (opsional)',
                   border: OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value != null &&
-                      value.isNotEmpty &&
-                      int.tryParse(value) == null) {
-                    return 'Tahun pembelian harus berupa angka';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _hargaSatuanController,
-                decoration: const InputDecoration(
-                  labelText: 'Harga Satuan (opsional)',
-                  prefixText: 'Rp ',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                validator: (value) {
-                  if (value != null && value.isNotEmpty) {
-                    final v = double.tryParse(value.replaceAll(',', '.'));
-                    if (v == null || v < 0) return 'Harga tidak valid';
-                  }
-                  return null;
-                },
+                keyboardType: TextInputType.text,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -950,14 +897,6 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
                   return null;
                 },
               ),
-              if (_hargaSatuanController.text.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Total Harga: Rp ${_totalHarga.toStringAsFixed(0)}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,

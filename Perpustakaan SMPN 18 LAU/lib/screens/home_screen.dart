@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'tambah_buku_screen.dart';
 import 'detail_buku_screen.dart';
@@ -9,6 +10,7 @@ import 'daftar_buku_screen.dart';
 import 'peminjaman_riwayat_screen.dart';
 import 'peminjaman_buku_admin_screen.dart';
 import 'pengembalian_buku_screen.dart';
+import 'laporan_buku_rusak_hilang_screen.dart';
 import 'student_riwayat_screen.dart';
 import 'daftar_anggota_screen.dart';
 import 'profil_siswa_screen.dart';
@@ -34,6 +36,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  DateTime? _lastBackPressed;
   final FirestoreService _firestoreService = FirestoreService();
   final AppNotificationService _appNotificationService =
       AppNotificationService();
@@ -223,10 +226,22 @@ class _HomeScreenState extends State<HomeScreen> {
         _bukuList = bukuList;
         _filterBuku();
       });
-      // Peringatan stok rendah untuk admin (optimize: hanya show first alert)
+      // Peringatan stok rendah untuk admin (adaptive: gunakan safety stock masing-masing buku)
       final auth = context.read<AuthProvider>();
       if (auth.role == 'admin' && mounted) {
-        final lowStockBooks = bukuList.where((b) => b.stok <= 5).toList();
+        final lowStockBooks =
+            bukuList.where((b) {
+              if (!b.isArsEnabled) return false;
+              // Gunakan safety stock manual jika ada, atau hitung adaptif (30% stok awal, min 1, max 5)
+              final int ss;
+              if (b.safetyStock != null) {
+                ss = b.safetyStock!;
+              } else {
+                final stokRef = b.stokAwal ?? b.stok;
+                ss = (stokRef * 0.3).ceil().clamp(1, 5);
+              }
+              return b.stok <= ss;
+            }).toList();
         if (lowStockBooks.isNotEmpty) {
           final b = lowStockBooks.first;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -289,667 +304,715 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final isAdmin = (auth.role == 'admin');
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Perpustakaan SMPN 18 LAU',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        final now = DateTime.now();
+        if (_lastBackPressed == null ||
+            now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
+          _lastBackPressed = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tekan kembali sekali lagi untuk keluar'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else {
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Perpustakaan SMPN 18 LAU',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          centerTitle: true,
+          elevation: 0,
+          actions: [if (isAdmin) const ArsNotificationWidget()],
         ),
-        centerTitle: true,
-        elevation: 0,
-        actions: [if (isAdmin) const ArsNotificationWidget()],
-      ),
-      drawer:
-          isAdmin
-              ? Drawer(
-                child: SafeArea(
-                  child: ListView(
-                    padding: EdgeInsets.zero,
-                    children: [
-                      DrawerHeader(
-                        decoration: BoxDecoration(color: Color(0xFF0D47A1)),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Center(
-                                child: Image.asset(
-                                  'assets/images/Tutwurihandayani-.png',
-                                  height: 80,
-                                  width: 80,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Icon(
-                                      Icons.library_books,
-                                      size: 80,
-                                      color: Colors.white,
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                            Align(
-                              alignment: Alignment.bottomLeft,
-                              child: Text(
-                                'Menu Admin',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Admin drawer: show ARS notifications (same as bell)
-                      StreamBuilder<List<dynamic>>(
-                        stream: _arsService.getUnreadNotificationsStream(),
-                        builder: (context, snapshot) {
-                          final unreadCount = snapshot.data?.length ?? 0;
-                          return ListTile(
-                            leading: Stack(
-                              children: [
-                                const Icon(
-                                  Icons.notifications,
-                                  color: Colors.orange,
-                                ),
-                                if (unreadCount > 0)
-                                  Positioned(
-                                    right: 0,
-                                    top: 0,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(2),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      constraints: const BoxConstraints(
-                                        minWidth: 14,
-                                        minHeight: 14,
-                                      ),
-                                      child: Text(
-                                        unreadCount > 9 ? '9+' : '$unreadCount',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            title: const Text('Notifikasi ARS'),
-                            subtitle:
-                                unreadCount > 0
-                                    ? Text(
-                                      '$unreadCount notifikasi ARS baru',
-                                      style: const TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: 12,
-                                      ),
-                                    )
-                                    : null,
-                            onTap: () {
-                              Navigator.pop(context);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder:
-                                      (_) => const ArsNotificationsScreen(),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                      const Divider(),
-                      ListTile(
-                        leading: const Icon(Icons.history),
-                        title: const Text('Riwayat Peminjaman'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PeminjamanRiwayatScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      const Divider(),
-                      ListTile(
-                        leading: const Icon(Icons.people),
-                        title: const Text('Daftar Anggota Perpus'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const DaftarAnggotaScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(
-                          Icons.person_add,
-                          color: Colors.orange,
-                        ),
-                        title: const Text('Persetujuan Pendaftaran'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const ApproveSiswaScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      const Divider(),
-                      ListTile(
-                        leading: const Icon(Icons.logout, color: Colors.red),
-                        title: const Text(
-                          'Keluar',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                          ),
-                        ),
-                        onTap: () async {
-                          if (!Throttle.allow('logout_admin')) return;
-                          Navigator.pop(context);
-                          await runWithLoading(context, () async {
-                            await context.read<AuthProvider>().signOut();
-                            if (context.mounted) {
-                              Navigator.pushNamedAndRemoveUntil(
-                                context,
-                                '/',
-                                (route) => false,
-                              );
-                            }
-                          }, message: 'Keluar dari akun...');
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              )
-              : Drawer(
-                child: SafeArea(
-                  child: ListView(
-                    padding: EdgeInsets.zero,
-                    children: [
-                      DrawerHeader(
-                        decoration: BoxDecoration(color: Color(0xFF0D47A1)),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Center(
-                                child: Image.asset(
-                                  'assets/images/Tutwurihandayani-.png',
-                                  height: 80,
-                                  width: 80,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Icon(
-                                      Icons.library_books,
-                                      size: 80,
-                                      color: Colors.white,
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                            Align(
-                              alignment: Alignment.bottomLeft,
-                              child: Text(
-                                'Menu',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      StreamBuilder<List<dynamic>>(
-                        stream:
-                            _appNotificationService
-                                .getUnreadNotificationsStream(),
-                        builder: (context, snapshot) {
-                          final unreadCount = snapshot.data?.length ?? 0;
-                          return ListTile(
-                            leading: Stack(
-                              children: [
-                                const Icon(
-                                  Icons.notifications,
-                                  color: Colors.blue,
-                                ),
-                                if (unreadCount > 0)
-                                  Positioned(
-                                    right: 0,
-                                    top: 0,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(2),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      constraints: const BoxConstraints(
-                                        minWidth: 14,
-                                        minHeight: 14,
-                                      ),
-                                      child: Text(
-                                        unreadCount > 9 ? '9+' : '$unreadCount',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            title: const Text('Notifikasi'),
-                            subtitle:
-                                unreadCount > 0
-                                    ? Text(
-                                      '$unreadCount notifikasi baru',
-                                      style: const TextStyle(
-                                        color: Colors.blue,
-                                        fontSize: 12,
-                                      ),
-                                    )
-                                    : null,
-                            onTap: () {
-                              Navigator.pop(context);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const NotificationsScreen(),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.person),
-                        title: const Text('Profil Saya'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const ProfilSiswaScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.history),
-                        title: const Text('Riwayat Saya'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const StudentRiwayatScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      const Divider(),
-                      ListTile(
-                        leading: const Icon(Icons.logout),
-                        title: const Text('Keluar'),
-                        onTap: () async {
-                          if (!Throttle.allow('logout_siswa')) return;
-                          Navigator.pop(context);
-                          await runWithLoading(context, () async {
-                            await context.read<AuthProvider>().signOut();
-                            if (context.mounted) {
-                              Navigator.pushNamedAndRemoveUntil(
-                                context,
-                                '/',
-                                (route) => false,
-                              );
-                            }
-                          }, message: 'Keluar dari akun...');
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-      body:
-          isAdmin
-              ? SingleChildScrollView(
-                child: Column(
-                  children: [
-                    // Header dengan carousel foto perpustakaan
-                    SizedBox(
-                      width: double.infinity,
-                      height: 250,
-                      child: Stack(
-                        children: [
-                          // Carousel foto
-                          PageView.builder(
-                            controller: _pageController,
-                            onPageChanged: (index) {
-                              setState(() {
-                                _currentPage = index;
-                              });
-                            },
-                            itemCount: _libraryPhotos.length,
-                            itemBuilder: (context, index) {
-                              return Container(
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      const Color(0xFF0D47A1).withOpacity(0.8),
-                                      const Color(0xFF0D47A1).withOpacity(0.9),
-                                    ],
+        drawer:
+            isAdmin
+                ? Drawer(
+                  child: SafeArea(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: [
+                        DrawerHeader(
+                          decoration: BoxDecoration(color: Color(0xFF0D47A1)),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Center(
+                                  child: Image.asset(
+                                    'assets/images/Tutwurihandayani-.png',
+                                    height: 80,
+                                    width: 80,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(
+                                        Icons.library_books,
+                                        size: 80,
+                                        color: Colors.white,
+                                      );
+                                    },
                                   ),
                                 ),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    // Foto perpustakaan
-                                    _buildImage(_libraryPhotos[index]),
-                                    // Overlay gelap untuk kontras teks
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          colors: [
-                                            Colors.transparent,
-                                            Colors.black.withOpacity(0.5),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                          // Teks di bawah
-                          Positioned(
-                            bottom: 30,
-                            left: 0,
-                            right: 0,
-                            child: Column(
-                              children: [
-                                const Text(
-                                  'Perpustakaan SMPN 18 LAU',
+                              ),
+                              Align(
+                                alignment: Alignment.bottomLeft,
+                                child: Text(
+                                  'Menu Admin',
                                   style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: 22,
+                                    fontSize: 20,
                                     fontWeight: FontWeight.bold,
-                                    shadows: [
-                                      Shadow(
-                                        color: Colors.black54,
-                                        blurRadius: 4,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Dashboard Admin',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.95),
-                                    fontSize: 15,
-                                    shadows: const [
-                                      Shadow(
-                                        color: Colors.black54,
-                                        blurRadius: 4,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Indicator dots
-                          Positioned(
-                            bottom: 10,
-                            left: 0,
-                            right: 0,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(
-                                _libraryPhotos.length,
-                                (index) => Container(
-                                  width: 8,
-                                  height: 8,
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color:
-                                        _currentPage == index
-                                            ? Colors.white
-                                            : Colors.white.withOpacity(0.5),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Quick Actions
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Menu Utama',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF0D47A1),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Wrap(
-                            spacing: 16,
-                            runSpacing: 16,
-                            children: [
-                              _QuickAction(
-                                icon: Icons.menu_book_rounded,
-                                label: 'Daftar Buku',
-                                color: const Color(0xFF2196F3),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const DaftarBukuScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _QuickAction(
-                                icon: Icons.add_circle_rounded,
-                                label: 'Tambah Buku',
-                                color: const Color(0xFF4CAF50),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const TambahBukuScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _QuickAction(
-                                icon: Icons.book_online_rounded,
-                                label: 'Peminjaman',
-                                color: const Color(0xFFFF9800),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (_) =>
-                                              const PeminjamanBukuAdminScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _QuickAction(
-                                icon: Icons.assignment_return,
-                                label: 'Pengembalian',
-                                color: const Color(0xFF3F51B5),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (_) => const PengembalianBukuScreen(),
-                                    ),
-                                  );
-                                },
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                    // ARS Notification Widget - Menampilkan notifikasi stok rendah
-                    const ArsNotificationListWidget(maxItems: 5),
-                  ],
-                ),
-              )
-              : _bukuList.isEmpty
-              ? const Center(
-                child: Text(
-                  'Belum ada buku tersedia',
-                  style: TextStyle(fontSize: 18),
-                ),
-              )
-              : Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Search & Category filter (untuk siswa)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _searchController,
-                            decoration: const InputDecoration(
-                              hintText: 'Cari buku atau pengarang...',
-                              prefixIcon: Icon(Icons.search),
-                              border: OutlineInputBorder(),
-                            ),
-                            onChanged: (val) {
-                              _searchQuery = val;
-                              _filterBuku();
-                            },
-                          ),
                         ),
-                        const SizedBox(width: 12),
-                        DropdownButton<String>(
-                          value:
-                              _categories.contains(_selectedCategory)
-                                  ? _selectedCategory
-                                  : (_categories.isNotEmpty
-                                      ? _categories.first
-                                      : null),
-                          items:
-                              _categories
-                                  .map(
-                                    (c) => DropdownMenuItem(
-                                      value: c,
-                                      child: Text(c),
+                        // Admin drawer: show ARS notifications (same as bell)
+                        StreamBuilder<List<dynamic>>(
+                          stream: _arsService.getUnreadNotificationsStream(),
+                          builder: (context, snapshot) {
+                            final unreadCount = snapshot.data?.length ?? 0;
+                            return ListTile(
+                              leading: Stack(
+                                children: [
+                                  const Icon(
+                                    Icons.notifications,
+                                    color: Colors.orange,
+                                  ),
+                                  if (unreadCount > 0)
+                                    Positioned(
+                                      right: 0,
+                                      top: 0,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        constraints: const BoxConstraints(
+                                          minWidth: 14,
+                                          minHeight: 14,
+                                        ),
+                                        child: Text(
+                                          unreadCount > 9
+                                              ? '9+'
+                                              : '$unreadCount',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 8,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
                                     ),
-                                  )
-                                  .toList(),
-                          onChanged: (val) {
-                            if (val == null) return;
-                            setState(() {
-                              _selectedCategory = val;
-                            });
-                            _filterBuku();
+                                ],
+                              ),
+                              title: const Text('Notifikasi ARS'),
+                              subtitle:
+                                  unreadCount > 0
+                                      ? Text(
+                                        '$unreadCount notifikasi ARS baru',
+                                        style: const TextStyle(
+                                          color: Colors.orange,
+                                          fontSize: 12,
+                                        ),
+                                      )
+                                      : null,
+                              onTap: () {
+                                Navigator.pop(context);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => const ArsNotificationsScreen(),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                        const Divider(),
+                        ListTile(
+                          leading: const Icon(Icons.history),
+                          title: const Text('Riwayat Peminjaman'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const PeminjamanRiwayatScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const Divider(),
+                        ListTile(
+                          leading: const Icon(Icons.people),
+                          title: const Text('Daftar Anggota Perpus'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const DaftarAnggotaScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(
+                            Icons.person_add,
+                            color: Colors.orange,
+                          ),
+                          title: const Text('Persetujuan Pendaftaran'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ApproveSiswaScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(
+                            Icons.report_problem,
+                            color: Color(0xFFE53935),
+                          ),
+                          title: const Text('Buku Rusak/Hilang'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (_) => const LaporanBukuRusakHilangScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const Divider(),
+                        ListTile(
+                          leading: const Icon(Icons.logout, color: Colors.red),
+                          title: const Text(
+                            'Keluar',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
+                          ),
+                          onTap: () async {
+                            if (!Throttle.allow('logout_admin')) return;
+                            Navigator.pop(context);
+                            await runWithLoading(context, () async {
+                              await context.read<AuthProvider>().signOut();
+                              if (context.mounted) {
+                                Navigator.pushNamedAndRemoveUntil(
+                                  context,
+                                  '/',
+                                  (route) => false,
+                                );
+                              }
+                            }, message: 'Keluar dari akun...');
                           },
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child:
-                          _filteredBukuList.isEmpty
-                              ? const Center(
-                                child: Text('Tidak ada buku sesuai filter'),
-                              )
-                              : ListView.builder(
-                                itemCount: _filteredBukuList.length,
-                                cacheExtent: 500,
-                                itemBuilder: (context, index) {
-                                  final buku = _filteredBukuList[index];
-                                  return BukuCard(
-                                    key: ValueKey(buku.id),
-                                    buku: buku,
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder:
-                                              (context) =>
-                                                  DetailBukuScreen(buku: buku),
-                                        ),
+                  ),
+                )
+                : Drawer(
+                  child: SafeArea(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: [
+                        DrawerHeader(
+                          decoration: BoxDecoration(color: Color(0xFF0D47A1)),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Center(
+                                  child: Image.asset(
+                                    'assets/images/Tutwurihandayani-.png',
+                                    height: 80,
+                                    width: 80,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(
+                                        Icons.library_books,
+                                        size: 80,
+                                        color: Colors.white,
                                       );
                                     },
-                                  );
-                                },
+                                  ),
+                                ),
                               ),
+                              Align(
+                                alignment: Alignment.bottomLeft,
+                                child: Text(
+                                  'Menu',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        StreamBuilder<List<dynamic>>(
+                          stream:
+                              _appNotificationService
+                                  .getUnreadNotificationsStream(),
+                          builder: (context, snapshot) {
+                            final unreadCount = snapshot.data?.length ?? 0;
+                            return ListTile(
+                              leading: Stack(
+                                children: [
+                                  const Icon(
+                                    Icons.notifications,
+                                    color: Colors.blue,
+                                  ),
+                                  if (unreadCount > 0)
+                                    Positioned(
+                                      right: 0,
+                                      top: 0,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        constraints: const BoxConstraints(
+                                          minWidth: 14,
+                                          minHeight: 14,
+                                        ),
+                                        child: Text(
+                                          unreadCount > 9
+                                              ? '9+'
+                                              : '$unreadCount',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 8,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              title: const Text('Notifikasi'),
+                              subtitle:
+                                  unreadCount > 0
+                                      ? Text(
+                                        '$unreadCount notifikasi baru',
+                                        style: const TextStyle(
+                                          color: Colors.blue,
+                                          fontSize: 12,
+                                        ),
+                                      )
+                                      : null,
+                              onTap: () {
+                                Navigator.pop(context);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const NotificationsScreen(),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.person),
+                          title: const Text('Profil Saya'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ProfilSiswaScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.history),
+                          title: const Text('Riwayat Saya'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const StudentRiwayatScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const Divider(),
+                        ListTile(
+                          leading: const Icon(Icons.logout),
+                          title: const Text('Keluar'),
+                          onTap: () async {
+                            if (!Throttle.allow('logout_siswa')) return;
+                            Navigator.pop(context);
+                            await runWithLoading(context, () async {
+                              await context.read<AuthProvider>().signOut();
+                              if (context.mounted) {
+                                Navigator.pushNamedAndRemoveUntil(
+                                  context,
+                                  '/',
+                                  (route) => false,
+                                );
+                              }
+                            }, message: 'Keluar dari akun...');
+                          },
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-      floatingActionButton:
-          isAdmin
-              ? FloatingActionButton(
-                onPressed: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const TambahBukuScreen(),
-                    ),
-                  );
-                  if (result == true) {
-                    _loadBuku();
-                  }
-                },
-                tooltip: 'Tambah Buku',
-                backgroundColor: const Color(0xFF3498DB),
-                child: const Icon(Icons.add, color: Colors.white),
-              )
-              : null,
-    );
+        body:
+            isAdmin
+                ? SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      // Header dengan carousel foto perpustakaan
+                      SizedBox(
+                        width: double.infinity,
+                        height: 250,
+                        child: Stack(
+                          children: [
+                            // Carousel foto
+                            PageView.builder(
+                              controller: _pageController,
+                              onPageChanged: (index) {
+                                setState(() {
+                                  _currentPage = index;
+                                });
+                              },
+                              itemCount: _libraryPhotos.length,
+                              itemBuilder: (context, index) {
+                                return Container(
+                                  width: double.infinity,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        const Color(
+                                          0xFF0D47A1,
+                                        ).withOpacity(0.8),
+                                        const Color(
+                                          0xFF0D47A1,
+                                        ).withOpacity(0.9),
+                                      ],
+                                    ),
+                                  ),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      // Foto perpustakaan
+                                      _buildImage(_libraryPhotos[index]),
+                                      // Overlay gelap untuk kontras teks
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Colors.transparent,
+                                              Colors.black.withOpacity(0.5),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                            // Teks di bawah
+                            Positioned(
+                              bottom: 30,
+                              left: 0,
+                              right: 0,
+                              child: Column(
+                                children: [
+                                  const Text(
+                                    'Perpustakaan SMPN 18 LAU',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black54,
+                                          blurRadius: 4,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Dashboard Admin',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.95),
+                                      fontSize: 15,
+                                      shadows: const [
+                                        Shadow(
+                                          color: Colors.black54,
+                                          blurRadius: 4,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Indicator dots
+                            Positioned(
+                              bottom: 10,
+                              left: 0,
+                              right: 0,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: List.generate(
+                                  _libraryPhotos.length,
+                                  (index) => Container(
+                                    width: 8,
+                                    height: 8,
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color:
+                                          _currentPage == index
+                                              ? Colors.white
+                                              : Colors.white.withOpacity(0.5),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Quick Actions
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Menu Utama',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0D47A1),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Wrap(
+                              spacing: 16,
+                              runSpacing: 16,
+                              children: [
+                                _QuickAction(
+                                  icon: Icons.menu_book_rounded,
+                                  label: 'Daftar Buku',
+                                  color: const Color(0xFF2196F3),
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) => const DaftarBukuScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                _QuickAction(
+                                  icon: Icons.add_circle_rounded,
+                                  label: 'Tambah Buku',
+                                  color: const Color(0xFF4CAF50),
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) => const TambahBukuScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                _QuickAction(
+                                  icon: Icons.book_online_rounded,
+                                  label: 'Peminjaman',
+                                  color: const Color(0xFFFF9800),
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) =>
+                                                const PeminjamanBukuAdminScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                _QuickAction(
+                                  icon: Icons.assignment_return,
+                                  label: 'Pengembalian',
+                                  color: const Color(0xFF3F51B5),
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) =>
+                                                const PengembalianBukuScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      // ARS Notification Widget - Menampilkan notifikasi stok rendah
+                      const ArsNotificationListWidget(maxItems: 5),
+                    ],
+                  ),
+                )
+                : _bukuList.isEmpty
+                ? const Center(
+                  child: Text(
+                    'Belum ada buku tersedia',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                )
+                : Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Search & Category filter (untuk siswa)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              decoration: const InputDecoration(
+                                hintText: 'Cari buku atau pengarang...',
+                                prefixIcon: Icon(Icons.search),
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (val) {
+                                _searchQuery = val;
+                                _filterBuku();
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          DropdownButton<String>(
+                            value:
+                                _categories.contains(_selectedCategory)
+                                    ? _selectedCategory
+                                    : (_categories.isNotEmpty
+                                        ? _categories.first
+                                        : null),
+                            items:
+                                _categories
+                                    .map(
+                                      (c) => DropdownMenuItem(
+                                        value: c,
+                                        child: Text(c),
+                                      ),
+                                    )
+                                    .toList(),
+                            onChanged: (val) {
+                              if (val == null) return;
+                              setState(() {
+                                _selectedCategory = val;
+                              });
+                              _filterBuku();
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child:
+                            _filteredBukuList.isEmpty
+                                ? const Center(
+                                  child: Text('Tidak ada buku sesuai filter'),
+                                )
+                                : ListView.builder(
+                                  itemCount: _filteredBukuList.length,
+                                  cacheExtent: 500,
+                                  itemBuilder: (context, index) {
+                                    final buku = _filteredBukuList[index];
+                                    return BukuCard(
+                                      key: ValueKey(buku.id),
+                                      buku: buku,
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder:
+                                                (context) => DetailBukuScreen(
+                                                  buku: buku,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                      ),
+                    ],
+                  ),
+                ),
+        floatingActionButton:
+            isAdmin
+                ? FloatingActionButton(
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const TambahBukuScreen(),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadBuku();
+                    }
+                  },
+                  tooltip: 'Tambah Buku',
+                  backgroundColor: const Color(0xFF3498DB),
+                  child: const Icon(Icons.add, color: Colors.white),
+                )
+                : null,
+      ),
+    ); // PopScope
   }
 }
 

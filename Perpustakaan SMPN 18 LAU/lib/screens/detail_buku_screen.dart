@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/buku_model.dart';
 import '../services/firestore_service.dart';
 import '../services/lending_statistics_service.dart';
@@ -10,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../configs/feature_flags.dart';
 import 'baca_buku_screen.dart';
 import 'edit_buku_screen.dart';
+import 'ubah_kondisi_buku_screen.dart';
 
 class DetailBukuScreen extends StatefulWidget {
   final BukuModel buku;
@@ -66,9 +68,6 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
     if (widget.buku.id == null) return;
     final buku = _currentBuku ?? widget.buku;
     final controller = TextEditingController(text: buku.stok.toString());
-    final stokAwalController = TextEditingController(
-      text: buku.stokAwal != null ? buku.stokAwal.toString() : '',
-    );
 
     final ok = await showDialog<bool>(
       context: context,
@@ -82,14 +81,6 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
                   controller: controller,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'Stok baru'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: stokAwalController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Stok awal (opsional) - kosong = tidak ubah',
-                  ),
                 ),
               ],
             ),
@@ -108,10 +99,6 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
 
     if (ok == true) {
       final val = int.tryParse(controller.text.trim());
-      final valAwal =
-          stokAwalController.text.trim().isEmpty
-              ? null
-              : int.tryParse(stokAwalController.text.trim());
       if (val == null || val < 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Masukkan angka stok yang valid')),
@@ -126,11 +113,6 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
           val,
           updateStokAwal: false,
         );
-
-        // Jika user mengisi stok_awal secara eksplisit, set stok_awal terpisah
-        if (valAwal != null && valAwal >= 0) {
-          await _firestoreService.setStokAwal(widget.buku.id!, valAwal);
-        }
         await _refreshBuku();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -406,30 +388,92 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
                                     Icons.inventory_2_outlined,
                                     'Stok Tersedia',
                                     buku.stok.toString(),
-                                    Colors.blue,
+                                    const Color(0xFF455A64),
                                   ),
                                   _infoTile(
                                     Icons.trending_up_outlined,
                                     'Dipinjam Hari Ini',
                                     _totalLoansToday.toString(),
-                                    Colors.orange,
+                                    const Color(0xFF455A64),
                                   ),
-                                  if (widget.buku.hargaSatuan != null)
+                                  if (buku.effectiveJumlahRusak > 0)
                                     _infoTile(
-                                      Icons.attach_money_outlined,
-                                      'Harga Satuan',
-                                      'Rp ${widget.buku.hargaSatuan!.toStringAsFixed(0)}',
+                                      Icons.build_circle_outlined,
+                                      'Jumlah Rusak',
+                                      '${buku.effectiveJumlahRusak} eksemplar',
+                                      const Color(0xFFE65100),
+                                    ),
+                                  if (buku.effectiveJumlahHilang > 0)
+                                    _infoTile(
+                                      Icons.search_off_rounded,
+                                      'Jumlah Hilang',
+                                      '${buku.effectiveJumlahHilang} eksemplar',
+                                      const Color(0xFFC62828),
+                                    ),
+                                  if (buku.statusKondisi != 'Tersedia' &&
+                                      buku.catatanKondisi != null &&
+                                      buku.catatanKondisi!.trim().isNotEmpty)
+                                    _infoTile(
+                                      Icons.notes_rounded,
+                                      'Catatan Kondisi',
+                                      buku.catatanKondisi!.trim(),
+                                      Colors.grey[600]!,
+                                    ),
+                                  if (widget.buku.isbn != null &&
+                                      widget.buku.isbn!.isNotEmpty)
+                                    _infoTile(
+                                      Icons.book_outlined,
+                                      'ISBN',
+                                      widget.buku.isbn!,
                                       Colors.green,
                                     ),
                                 ],
                               ),
                               if (isAdmin) ...[
                                 const SizedBox(height: 12),
-                                ElevatedButton.icon(
-                                  icon: const Icon(Icons.inventory_2),
-                                  label: const Text('Atur Stok'),
-                                  onPressed:
-                                      _isLoading ? null : _showSetStokDialog,
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.inventory_2),
+                                      label: const Text('Atur Stok'),
+                                      onPressed:
+                                          _isLoading
+                                              ? null
+                                              : _showSetStokDialog,
+                                    ),
+                                    ElevatedButton.icon(
+                                      icon: const Icon(
+                                        Icons.build_circle_outlined,
+                                      ),
+                                      label: const Text('Atur Buku Rusak'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFFE65100,
+                                        ),
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      onPressed:
+                                          _isLoading
+                                              ? null
+                                              : () async {
+                                                final changed =
+                                                    await Navigator.push<bool>(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder:
+                                                            (_) =>
+                                                                UbahKondisiBukuScreen(
+                                                                  buku: buku,
+                                                                ),
+                                                      ),
+                                                    );
+                                                if (changed == true)
+                                                  _refreshBuku();
+                                              },
+                                    ),
+                                  ],
                                 ),
                               ],
                             ],
@@ -694,9 +738,23 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
 
     setState(() => _isLoading = true);
     try {
+      // Load kelas dari data user
+      String? studentKelas;
+      final uid = auth.currentUser?.uid;
+      if (uid != null) {
+        final userDoc =
+            await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        if (userDoc.exists) {
+          final kelas = userDoc.data()?['kelas'] ?? '';
+          if (kelas.toString().isNotEmpty) {
+            studentKelas = kelas.toString();
+          }
+        }
+      }
+
       final peminjaman = PeminjamanModel(
         namaPeminjam: nama,
-        kelas: null,
+        kelas: studentKelas,
         uidSiswa: auth.currentUser?.uid,
         judulBuku: (widget.buku.judul),
         tanggalPinjam: DateTime.now(),

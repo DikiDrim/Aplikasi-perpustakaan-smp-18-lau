@@ -35,40 +35,28 @@ class ArsService {
   ///
   /// Parameter:
   /// - bukuId: ID buku
-  /// - stokSebelumTransaksi: Stok SEBELUM peminjaman (STOK AWAL)
+  /// - stokSetelahTransaksi: Stok SETELAH peminjaman (sudah dikurangi)
   /// - jumlahDipinjam: Jumlah buku yang dipinjam
   Future<ArsNotificationModel?> checkArsOnTransaction({
     required String bukuId,
-    required int stokSebelumTransaksi,
+    required int stokSetelahTransaksi,
     required int jumlahDipinjam,
   }) async {
     print('\n[ARS REALTIME CHECK]');
     print('  Buku ID: $bukuId');
-    print('  Stok Sebelum: $stokSebelumTransaksi');
+    print('  Stok Setelah Transaksi: $stokSetelahTransaksi');
     print('  Jumlah Dipinjam: $jumlahDipinjam');
 
     try {
-      // VALIDASI 1: Jumlah transaksi harus valid
+      // VALIDASI: Jumlah transaksi harus valid
       if (jumlahDipinjam <= 0) {
         print('  ❌ ERROR: Jumlah peminjaman harus > 0');
         return null;
       }
 
-      // VALIDASI 2: Cegah peminjaman jika stok tidak cukup
-      if (stokSebelumTransaksi < jumlahDipinjam) {
-        print('  ❌ ERROR: Stok tidak cukup!');
-        print('     Stok: $stokSebelumTransaksi < Diminta: $jumlahDipinjam');
-        throw Exception('Stok tidak cukup untuk peminjaman ini');
-      }
-
-      // VALIDASI 3: Stok akhir tidak boleh negatif
-      final stokAkhir = stokSebelumTransaksi - jumlahDipinjam;
-      if (stokAkhir < 0) {
-        print('  ❌ ERROR: Stok akhir negatif!');
-        throw Exception('Transaksi menghasilkan stok negatif');
-      }
-
-      // Ambil data buku
+      // Ambil data buku untuk cek isArsEnabled, safetyStock, stokAwal dll
+      // PENTING: Kita TIDAK menggunakan buku.stok karena bisa stale dari cache!
+      // Kita menggunakan stokSetelahTransaksi yang dihitung langsung dari transaksi.
       final docBuku =
           await _firestore.collection(_booksCollection).doc(bukuId).get();
       if (!docBuku.exists) {
@@ -81,19 +69,37 @@ class ArsService {
         docBuku.id,
       );
 
-      if (!buku.isArsEnabled) {
-        print('  ⚠️ ARS tidak enabled untuk buku ini');
-        return null;
-      }
+      // Gunakan stok yang LANGSUNG dari parameter (bukan dari DB/cache)
+      final int stokAkhirAktual = stokSetelahTransaksi;
+      final int stokSebelumAktual = stokAkhirAktual + jumlahDipinjam;
 
-      final safetyStock = buku.safetyStock ?? 5;
+      print('  Stok Setelah Transaksi (param langsung): $stokAkhirAktual');
+      print('  Stok Sebelum (rekonstruksi): $stokSebelumAktual');
+      print('  isArsEnabled (from DB): ${buku.isArsEnabled}');
+
+      // ARS selalu aktif - field is_ars_enabled bisa salah karena bug edit sebelumnya
+      // Jika di masa depan ingin nonaktifkan ARS per buku, bisa diaktifkan kembali
+      // if (!buku.isArsEnabled) {
+      //   print('  ⚠️ ARS tidak enabled untuk buku ini');
+      //   return null;
+      // }
+
+      // Safety stock adaptif: jika buku punya safetyStock manual, gunakan itu.
+      // Jika tidak, hitung otomatis berdasarkan stok awal.
+      final int safetyStock;
+      if (buku.safetyStock != null) {
+        safetyStock = buku.safetyStock!;
+      } else {
+        // Default: 30% dari stok awal, minimal 1, maksimal 5
+        final stokRef = buku.stokAwal ?? stokSebelumAktual;
+        safetyStock = (stokRef * 0.3).ceil().clamp(1, 5);
+      }
       final now = DateTime.now();
 
-      // PERHITUNGAN FINAL
-      final stokAwal = stokSebelumTransaksi; // STOK AWAL
-      final totalPeminjamanHariIni =
-          jumlahDipinjam; // TOTAL PEMINJAMAN HARI INI
-      final stokAkhirHitung = stokAwal - totalPeminjamanHariIni; // STOK AKHIR
+      // PERHITUNGAN FINAL (menggunakan data aktual dari Firestore)
+      final stokAwal = stokSebelumAktual; // STOK AWAL (sebelum transaksi ini)
+      final totalPeminjamanHariIni = jumlahDipinjam; // JUMLAH DIPINJAM KALI INI
+      final stokAkhirHitung = stokAkhirAktual; // STOK AKHIR (aktual dari DB)
 
       print('  Buku: ${buku.judul}');
       print('  Stok Awal: $stokAwal');
@@ -107,7 +113,11 @@ class ArsService {
           '  ✓✓✓ STOK KRITIS! (Stok Akhir $stokAkhirHitung <= Safety Stock $safetyStock)',
         );
 
-        final jumlahPengadaan = safetyStock - stokAkhirHitung;
+        // Hitung jumlah pengadaan: berapa buku perlu diadakan agar stok kembali ke safety stock, minimal 1
+        final jumlahPengadaan = (safetyStock - stokAkhirHitung).clamp(
+          1,
+          safetyStock,
+        );
 
         final notification = ArsNotificationModel(
           bukuId: buku.id!,
@@ -369,7 +379,14 @@ class ArsService {
       for (final buku in bukuList) {
         if (!buku.isArsEnabled) continue;
 
-        final safetyStock = buku.safetyStock ?? 5;
+        // Safety stock adaptif: manual jika diset, atau 30% dari stok awal
+        final int safetyStock;
+        if (buku.safetyStock != null) {
+          safetyStock = buku.safetyStock!;
+        } else {
+          final stokRef = buku.stokAwal ?? buku.stok;
+          safetyStock = (stokRef * 0.3).ceil().clamp(1, 5);
+        }
         if (buku.stok <= safetyStock) {
           lowStockBooks.add({
             'buku_id': buku.id,

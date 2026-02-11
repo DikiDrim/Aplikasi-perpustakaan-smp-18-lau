@@ -332,10 +332,23 @@ class _DaftarAnggotaScreenState extends State<DaftarAnggotaScreen> {
                                   backgroundColor: const Color(
                                     0xFF0D47A1,
                                   ).withOpacity(0.1),
-                                  child: const Icon(
-                                    Icons.person,
-                                    color: Color(0xFF0D47A1),
-                                  ),
+                                  backgroundImage:
+                                      (siswa['photo_url'] != null &&
+                                              siswa['photo_url']
+                                                  .toString()
+                                                  .isNotEmpty)
+                                          ? NetworkImage(siswa['photo_url'])
+                                          : null,
+                                  child:
+                                      (siswa['photo_url'] == null ||
+                                              siswa['photo_url']
+                                                  .toString()
+                                                  .isEmpty)
+                                          ? const Icon(
+                                            Icons.person,
+                                            color: Color(0xFF0D47A1),
+                                          )
+                                          : null,
                                 ),
                                 title: Text(
                                   siswa['nama'] ?? '-',
@@ -348,6 +361,9 @@ class _DaftarAnggotaScreenState extends State<DaftarAnggotaScreen> {
                                   children: [
                                     const SizedBox(height: 4),
                                     Text('NIS: ${siswa['nis'] ?? '-'}'),
+                                    if (siswa['kelas'] != null &&
+                                        siswa['kelas'].toString().isNotEmpty)
+                                      Text('Kelas: ${siswa['kelas']}'),
                                     Text(
                                       'Username: ${siswa['username'] ?? '-'}',
                                     ),

@@ -8,6 +8,20 @@ class BukuCard extends StatelessWidget {
 
   const BukuCard({super.key, required this.buku, this.onTap});
 
+  String _buildKondisiLabel(BukuModel buku) {
+    final parts = <String>[];
+    if (buku.effectiveJumlahRusak > 0)
+      parts.add('Rusak: ${buku.effectiveJumlahRusak}');
+    if (buku.effectiveJumlahHilang > 0)
+      parts.add('Hilang: ${buku.effectiveJumlahHilang}');
+    if (parts.isEmpty) return buku.statusKondisi;
+    return parts.join(', ');
+  }
+
+  // Palette konsisten
+  static const _kRusak = Color(0xFFE65100);
+  static const _kHilang = Color(0xFFC62828);
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -60,12 +74,9 @@ class BukuCard extends StatelessWidget {
                                       color: Colors.grey,
                                       size: 30,
                                     ),
-                                memCacheWidth:
-                                    90, // Optimize: smaller cache for cards
+                                memCacheWidth: 90,
                                 memCacheHeight: 120,
-                                filterQuality:
-                                    FilterQuality
-                                        .low, // Optimize for low-end devices
+                                filterQuality: FilterQuality.low,
                               )
                               : const Icon(
                                 Icons.book,
@@ -108,85 +119,34 @@ class BukuCard extends StatelessWidget {
                           ),
                         ],
                         const SizedBox(height: 8),
-                        Row(
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color:
-                                    buku.stok > 0
-                                        ? const Color(0xFF6BCF7F)
-                                        : const Color(0xFFFF6B6B),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                buku.stok > 0
-                                    ? 'Stok: ${buku.stok}'
-                                    : 'Stok Habis',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                            _buildPill(
+                              buku.stok > 0
+                                  ? 'Stok: ${buku.stok}'
+                                  : 'Stok Habis',
+                              buku.stok > 0
+                                  ? const Color(0xFF2E7D32)
+                                  : const Color(0xFFC62828),
                             ),
-                            const SizedBox(width: 8),
-                            if (buku.isArsEnabled)
-                              Tooltip(
-                                message: 'ARS aktif',
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF00695C,
-                                    ).withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: const Color(
-                                        0xFF00695C,
-                                      ).withOpacity(0.35),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(
-                                        Icons.auto_awesome,
-                                        size: 12,
-                                        color: Color(0xFF00695C),
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Auto',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Color(0xFF00695C),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                            // Badge Kondisi Buku (Rusak / Hilang)
+                            if (buku.statusKondisi != 'Tersedia')
+                              _buildPill(
+                                _buildKondisiLabel(buku),
+                                buku.effectiveJumlahHilang > 0
+                                    ? _kHilang
+                                    : _kRusak,
                               ),
+
                             if (buku.isArsEnabled &&
                                 buku.safetyStock != null &&
                                 buku.stok <= buku.safetyStock!)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 8),
-                                child: Tooltip(
-                                  message: 'Stok rendah',
-                                  child: const Icon(
-                                    Icons.warning_amber_rounded,
-                                    color: Colors.orange,
-                                    size: 18,
-                                  ),
-                                ),
+                              _buildPill(
+                                'Stok Rendah',
+                                const Color(0xFFE65100),
+                                outlined: true,
                               ),
                           ],
                         ),
@@ -233,6 +193,25 @@ class BukuCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPill(String text, Color color, {bool outlined = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: outlined ? color.withOpacity(0.08) : color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: outlined ? Border.all(color: color.withOpacity(0.3)) : null,
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

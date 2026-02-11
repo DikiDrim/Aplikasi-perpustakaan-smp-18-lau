@@ -57,6 +57,238 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
     return 'Sisa ${mins}m';
   }
 
+  /// Dialog untuk memilih kondisi buku saat pengembalian
+  Future<Map<String, dynamic>?> _showKondisiBukuDialog(
+    BuildContext context, {
+    required String judulBuku,
+    required String namaPeminjam,
+    String? kelas,
+    required int sisa,
+    required bool isOverdue,
+    required int totalHariTerlambat,
+  }) async {
+    String selectedKondisi = 'Baik';
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            Color kondisiColor(String k) {
+              switch (k) {
+                case 'Baik':
+                  return Colors.green;
+                case 'Rusak':
+                  return Colors.orange;
+                case 'Hilang':
+                  return Colors.red;
+                default:
+                  return Colors.grey;
+              }
+            }
+
+            IconData kondisiIcon(String k) {
+              switch (k) {
+                case 'Baik':
+                  return Icons.check_circle;
+                case 'Rusak':
+                  return Icons.warning_amber;
+                case 'Hilang':
+                  return Icons.error;
+                default:
+                  return Icons.help;
+              }
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    isOverdue ? Icons.warning_amber : Icons.keyboard_return,
+                    color: isOverdue ? Colors.orange : Colors.blue,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isOverdue
+                          ? 'Pengembalian Terlambat'
+                          : 'Konfirmasi Pengembalian',
+                      style: TextStyle(color: isOverdue ? Colors.orange : null),
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Book info
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Peminjam: $namaPeminjam',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          if (kelas != null && kelas.isNotEmpty)
+                            Text('Kelas: $kelas'),
+                          const SizedBox(height: 4),
+                          Text('Buku: $judulBuku'),
+                          Text('Jumlah: $sisa buku'),
+                          if (isOverdue) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Terlambat: $totalHariTerlambat hari',
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Condition selector
+                    const Text(
+                      'Kondisi Buku',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...['Baik', 'Rusak', 'Hilang'].map((k) {
+                      return RadioListTile<String>(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        value: k,
+                        groupValue: selectedKondisi,
+                        title: Row(
+                          children: [
+                            Icon(
+                              kondisiIcon(k),
+                              color: kondisiColor(k),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              k,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: kondisiColor(k),
+                              ),
+                            ),
+                          ],
+                        ),
+                        onChanged: (v) {
+                          setDialogState(() => selectedKondisi = v!);
+                        },
+                      );
+                    }),
+
+                    // Warning info for damaged/lost
+                    if (selectedKondisi == 'Rusak' ||
+                        selectedKondisi == 'Hilang') ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.orange.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                selectedKondisi == 'Rusak'
+                                    ? 'Siswa akan mendapat peringatan karena buku dikembalikan dalam kondisi rusak.'
+                                    : 'Siswa akan mendapat peringatan serius karena buku hilang.',
+                                style: const TextStyle(
+                                  color: Colors.orange,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    if (isOverdue) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.amber.withOpacity(0.3),
+                          ),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: Colors.amber,
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Siswa akan mendapat peringatan keterlambatan melalui notifikasi.',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx, {'kondisi': selectedKondisi});
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kondisiColor(selectedKondisi),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Ya, kembalikan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final service = FirestoreService();
@@ -116,7 +348,6 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
               final sudahKembali = (d['jumlah_kembali'] ?? 0) as int;
               final sisa = (jumlah - sudahKembali).clamp(0, jumlah);
               final uidSiswa = d['uid_siswa'] as String?;
-              final dendaExisting = d['denda'] as String?;
               final terlambatNotified = d['terlambat_notified'] == true;
 
               // Kirim notifikasi keterlambatan ke siswa jika belum pernah
@@ -215,33 +446,33 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                               isOverdue ? FontWeight.bold : FontWeight.w600,
                         ),
                       ),
-                      // Tampilkan denda jika sudah ada
-                      if (dendaExisting != null &&
-                          dendaExisting.isNotEmpty) ...[
+                      // Tampilkan peringatan jika terlambat
+                      if (isOverdue && sisa > 0) ...[
                         const SizedBox(height: 4),
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.1),
+                            color: Colors.orange.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: Colors.red.withOpacity(0.3),
+                              color: Colors.orange.withOpacity(0.3),
                             ),
                           ),
                           child: Row(
                             children: [
                               const Icon(
                                 Icons.warning_amber,
-                                color: Colors.red,
+                                color: Colors.orange,
                                 size: 18,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Hukuman: $dendaExisting',
-                                  style: const TextStyle(
-                                    color: Colors.red,
+                                  'Peringatan: Buku ini sudah melewati batas waktu pengembalian. Harap segera dikembalikan.',
+                                  style: TextStyle(
+                                    color: Colors.orange[800],
                                     fontWeight: FontWeight.w500,
+                                    fontSize: 13,
                                   ),
                                 ),
                               ),
@@ -271,138 +502,67 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                                       return;
                                     }
 
-                                    // Jika buku terlambat, tampilkan dialog dengan opsi hukuman
-                                    if (isOverdue) {
-                                      final result =
-                                          await _showOverdueReturnDialog(
-                                            context: context,
-                                            namaPeminjam:
-                                                d['nama_peminjam'] ?? '-',
-                                            judulBuku: d['judul_buku'] ?? '-',
-                                            sisa: sisa,
-                                            hariTerlambat: totalHari,
-                                            existingDenda: dendaExisting,
-                                          );
+                                    // Show book condition dialog
+                                    final result = await _showKondisiBukuDialog(
+                                      context,
+                                      judulBuku: d['judul_buku'] ?? '-',
+                                      namaPeminjam: d['nama_peminjam'] ?? '-',
+                                      kelas: d['kelas']?.toString(),
+                                      sisa: sisa,
+                                      isOverdue: isOverdue,
+                                      totalHariTerlambat: totalHari,
+                                    );
 
-                                      if (result != null) {
-                                        final judulBuku =
-                                            d['judul_buku'] ?? '-';
-                                        try {
-                                          await runWithLoading(
-                                            context,
-                                            () async {
-                                              await service.kembalikanBuku(
-                                                id,
-                                                d['buku_id'] as String,
-                                                sisa,
-                                                denda:
-                                                    result['denda'] as String?,
-                                                isTerlambat: true,
-                                              );
-                                            },
-                                          );
+                                    if (result == null) return;
 
-                                          if (!mounted) return;
+                                    final kondisi = result['kondisi'] as String;
+                                    final judulBuku = d['judul_buku'] ?? '-';
 
-                                          final dendaMsg =
-                                              result['denda'] != null &&
-                                                      (result['denda']
-                                                              as String)
-                                                          .isNotEmpty
-                                                  ? '\nHukuman: ${result['denda']}'
-                                                  : '';
+                                    try {
+                                      await runWithLoading(context, () async {
+                                        await service
+                                            .kembalikanBukuDenganKondisi(
+                                              id,
+                                              d['buku_id'] as String,
+                                              sisa,
+                                              kondisiBuku: kondisi,
+                                              isTerlambat: isOverdue,
+                                            );
+                                      });
 
-                                          await SuccessPopup.show(
-                                            pageContext,
-                                            title: 'Pengembalian Berhasil!',
-                                            subtitle:
-                                                'Buku "$judulBuku" telah dikembalikan$dendaMsg',
-                                          );
-                                        } catch (e) {
-                                          if (!mounted) return;
-                                          ScaffoldMessenger.of(
-                                            pageContext,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Gagal mengembalikan buku: $e',
-                                              ),
-                                            ),
-                                          );
-                                        }
+                                      if (!mounted) return;
+
+                                      String subtitle;
+                                      if (kondisi == 'Rusak') {
+                                        subtitle =
+                                            'Buku "$judulBuku" dikembalikan dalam kondisi RUSAK.\nSiswa telah diberi peringatan.';
+                                      } else if (kondisi == 'Hilang') {
+                                        subtitle =
+                                            'Buku "$judulBuku" dilaporkan HILANG.\nSiswa telah diberi peringatan serius.';
+                                      } else if (isOverdue) {
+                                        subtitle =
+                                            'Buku "$judulBuku" telah dikembalikan.\nSiswa telah diberi peringatan keterlambatan.';
+                                      } else {
+                                        subtitle =
+                                            'Buku "$judulBuku" telah dikembalikan';
                                       }
-                                    } else {
-                                      // Buku tidak terlambat, dialog biasa
-                                      final konfirm = await showDialog<bool>(
-                                        context: context,
-                                        builder:
-                                            (_) => AlertDialog(
-                                              title: const Text(
-                                                'Konfirmasi Pengembalian',
-                                              ),
-                                              content: Text(
-                                                '${d['nama_peminjam'] ?? '-'} sudah mengembalikan $sisa buku?\nJudul: ${d['judul_buku'] ?? '-'}',
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed:
-                                                      () => Navigator.pop(
-                                                        context,
-                                                        false,
-                                                      ),
-                                                  child: const Text('Batal'),
-                                                ),
-                                                TextButton(
-                                                  onPressed:
-                                                      () => Navigator.pop(
-                                                        context,
-                                                        true,
-                                                      ),
-                                                  child: const Text(
-                                                    'Ya, kembalikan',
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
+
+                                      await SuccessPopup.show(
+                                        pageContext,
+                                        title: 'Pengembalian Berhasil!',
+                                        subtitle: subtitle,
                                       );
-
-                                      if (konfirm == true) {
-                                        final judulBuku =
-                                            d['judul_buku'] ?? '-';
-
-                                        try {
-                                          await runWithLoading(
-                                            context,
-                                            () async {
-                                              await service.kembalikanBuku(
-                                                id,
-                                                d['buku_id'] as String,
-                                                sisa,
-                                              );
-                                            },
-                                          );
-
-                                          if (!mounted) return;
-
-                                          await SuccessPopup.show(
-                                            pageContext,
-                                            title: 'Pengembalian Berhasil!',
-                                            subtitle:
-                                                'Buku "$judulBuku" telah dikembalikan',
-                                          );
-                                        } catch (e) {
-                                          if (!mounted) return;
-                                          ScaffoldMessenger.of(
-                                            pageContext,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Gagal mengembalikan buku: $e',
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      }
+                                    } catch (e) {
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(
+                                        pageContext,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Gagal mengembalikan buku: $e',
+                                          ),
+                                        ),
+                                      );
                                     }
                                   },
                         ),
@@ -415,143 +575,6 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
           );
         },
       ),
-    );
-  }
-
-  /// Dialog untuk pengembalian buku terlambat dengan opsi hukuman
-  Future<Map<String, dynamic>?> _showOverdueReturnDialog({
-    required BuildContext context,
-    required String namaPeminjam,
-    required String judulBuku,
-    required int sisa,
-    required int hariTerlambat,
-    String? existingDenda,
-  }) async {
-    final dendaController = TextEditingController(text: existingDenda ?? '');
-    bool sudahDikembalikan = false;
-
-    return showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  const Icon(Icons.warning_amber, color: Colors.red),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Pengembalian Terlambat',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Peminjam: $namaPeminjam',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 4),
-                          Text('Buku: $judulBuku'),
-                          Text('Jumlah: $sisa buku'),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Terlambat: $hariTerlambat hari',
-                            style: const TextStyle(
-                              color: Colors.red,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Checkbox konfirmasi buku sudah dikembalikan
-                    CheckboxListTile(
-                      value: sudahDikembalikan,
-                      onChanged: (val) {
-                        setDialogState(() {
-                          sudahDikembalikan = val ?? false;
-                        });
-                      },
-                      title: const Text('Buku sudah dikembalikan oleh siswa'),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Hukuman/Sanksi (opsional):',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: dendaController,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText: 'Contoh: Tugas membersihkan perpustakaan',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey[50],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Hukuman akan dikirimkan ke notifikasi siswa',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, null),
-                  child: const Text('Batal'),
-                ),
-                ElevatedButton(
-                  onPressed:
-                      sudahDikembalikan
-                          ? () {
-                            Navigator.pop(dialogContext, {
-                              'dikembalikan': true,
-                              'denda': dendaController.text.trim(),
-                            });
-                          }
-                          : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Proses Pengembalian'),
-                ),
-              ],
-            );
-          },
-        );
-      },
     );
   }
 }

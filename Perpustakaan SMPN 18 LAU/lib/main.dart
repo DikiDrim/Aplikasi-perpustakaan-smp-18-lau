@@ -19,6 +19,7 @@ import 'services/notification_service.dart';
 import 'utils/admin_setup.dart';
 import 'providers/global_loading_provider.dart';
 import 'widgets/loading_overlay.dart';
+import 'services/firestore_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,6 +49,13 @@ void main() async {
     } catch (e) {
       // Tidak fatal jika admin sudah ada
       debugPrint('Admin setup: $e');
+    }
+
+    // Migrasi: pastikan semua buku punya is_ars_enabled = true
+    try {
+      await FirestoreService().migrateArsEnabledForAllBooks();
+    } catch (e) {
+      debugPrint('ARS migration: $e');
     }
   } catch (e, st) {
     initError = 'Firebase initialize error: $e';

@@ -24,9 +24,8 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
   final _judulController = TextEditingController();
   final _pengarangController = TextEditingController();
   final _tahunController = TextEditingController();
-  final _tahunPembelianController = TextEditingController();
+  final _isbnController = TextEditingController();
   final _stokController = TextEditingController();
-  final _hargaSatuanController = TextEditingController();
   final _kategoriController = TextEditingController();
   final _deskripsiController = TextEditingController();
   XFile? _pickedImage;
@@ -38,7 +37,6 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
   bool _isUploadingBookFile = false;
   String? _kategoriSelected;
   late final FirestoreService _service;
-  double _totalHarga = 0;
 
   final FirestoreService _firestoreService = FirestoreService();
 
@@ -47,9 +45,8 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
     _judulController.dispose();
     _pengarangController.dispose();
     _tahunController.dispose();
-    _tahunPembelianController.dispose();
+    _isbnController.dispose();
     _stokController.dispose();
-    _hargaSatuanController.dispose();
     _kategoriController.dispose();
     _deskripsiController.dispose();
     super.dispose();
@@ -59,17 +56,6 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
   void initState() {
     super.initState();
     _service = FirestoreService();
-    _stokController.addListener(_recalculateTotal);
-    _hargaSatuanController.addListener(_recalculateTotal);
-  }
-
-  void _recalculateTotal() {
-    final int stok = int.tryParse(_stokController.text) ?? 0;
-    final double harga =
-        double.tryParse(_hargaSatuanController.text.replaceAll(',', '.')) ?? 0;
-    setState(() {
-      _totalHarga = stok * harga;
-    });
   }
 
   void _openManageCategories() {
@@ -80,239 +66,276 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) {
+      builder: (sheetContext) {
         final nameController = TextEditingController();
-        return SingleChildScrollView(
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              top: 12,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Kelola Kategori',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
+        return StatefulBuilder(
+          builder: (sheetCtx, setSheetState) {
+            return SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 12,
+                  bottom: MediaQuery.of(sheetCtx).viewInsets.bottom + 16,
                 ),
-                const SizedBox(height: 8),
-                Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Tambah kategori',
-                          border: OutlineInputBorder(),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Kelola Kategori',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(sheetCtx),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () async {
-                        final v = nameController.text.trim();
-                        if (v.isEmpty) return;
-                        await _service.addCategory(v);
-                        if (mounted) {
-                          nameController.clear();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Kategori ditambahkan'),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: nameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Tambah kategori',
+                              border: OutlineInputBorder(),
                             ),
-                          );
-                          setState(() => _kategoriSelected ??= v);
-                        }
-                      },
-                      child: const Text('Tambah'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () async {
+                            final v = nameController.text.trim();
+                            if (v.isEmpty) return;
+                            await _service.addCategory(v);
+                            nameController.clear();
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Kategori ditambahkan'),
+                                ),
+                              );
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted)
+                                  setState(() => _kategoriSelected ??= v);
+                              });
+                            }
+                          },
+                          child: const Text('Tambah'),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 320,
-                  child: StreamBuilder<List<String>>(
-                    stream: _service.getCategoriesStream(),
-                    builder: (context, snapshot) {
-                      final items = snapshot.data ?? const <String>[];
-                      if (items.isEmpty) {
-                        return const Center(child: Text('Belum ada kategori'));
-                      }
-                      return ListView.separated(
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final name = items[index];
-                          return ListTile(
-                            title: Text(name),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.edit_outlined,
-                                    color: Colors.blue,
-                                  ),
-                                  onPressed: () async {
-                                    final editController =
-                                        TextEditingController(text: name);
-                                    final newName = await showDialog<String>(
-                                      context: context,
-                                      builder:
-                                          (dialogContext) => AlertDialog(
-                                            title: const Text('Edit Kategori'),
-                                            content: TextField(
-                                              controller: editController,
-                                              decoration: const InputDecoration(
-                                                labelText: 'Nama kategori',
-                                                border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 320,
+                      child: StreamBuilder<List<String>>(
+                        stream: _service.getCategoriesStream(),
+                        builder: (context, snapshot) {
+                          final items = snapshot.data ?? const <String>[];
+                          if (items.isEmpty) {
+                            return const Center(
+                              child: Text('Belum ada kategori'),
+                            );
+                          }
+                          return ListView.separated(
+                            itemCount: items.length,
+                            separatorBuilder:
+                                (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final name = items[index];
+                              return ListTile(
+                                title: Text(name),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        color: Colors.blue,
+                                      ),
+                                      onPressed: () async {
+                                        final editController =
+                                            TextEditingController(text: name);
+                                        final newName = await showDialog<
+                                          String
+                                        >(
+                                          context: sheetCtx,
+                                          builder:
+                                              (dialogContext) => AlertDialog(
+                                                title: const Text(
+                                                  'Edit Kategori',
+                                                ),
+                                                content: TextField(
+                                                  controller: editController,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        labelText:
+                                                            'Nama kategori',
+                                                        border:
+                                                            OutlineInputBorder(),
+                                                      ),
+                                                  autofocus: true,
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed:
+                                                        () => Navigator.pop(
+                                                          dialogContext,
+                                                        ),
+                                                    child: const Text('Batal'),
+                                                  ),
+                                                  FilledButton(
+                                                    onPressed: () {
+                                                      final val =
+                                                          editController.text
+                                                              .trim();
+                                                      if (val.isNotEmpty &&
+                                                          val != name) {
+                                                        Navigator.pop(
+                                                          dialogContext,
+                                                          val,
+                                                        );
+                                                      } else {
+                                                        Navigator.pop(
+                                                          dialogContext,
+                                                        );
+                                                      }
+                                                    },
+                                                    child: const Text('Simpan'),
+                                                  ),
+                                                ],
                                               ),
-                                              autofocus: true,
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed:
-                                                    () => Navigator.pop(
-                                                      dialogContext,
-                                                    ),
-                                                child: const Text('Batal'),
-                                              ),
-                                              FilledButton(
-                                                onPressed: () {
-                                                  final val =
-                                                      editController.text
-                                                          .trim();
-                                                  if (val.isNotEmpty &&
-                                                      val != name) {
-                                                    Navigator.pop(
-                                                      dialogContext,
-                                                      val,
-                                                    );
-                                                  } else {
-                                                    Navigator.pop(
-                                                      dialogContext,
-                                                    );
-                                                  }
-                                                },
-                                                child: const Text('Simpan'),
-                                              ),
-                                            ],
-                                          ),
-                                    );
-                                    editController.dispose();
-                                    if (newName != null && newName.isNotEmpty) {
-                                      await _service.updateCategory(
-                                        name,
-                                        newName,
-                                      );
-                                      if (mounted) {
-                                        if (_kategoriSelected == name) {
-                                          setState(
-                                            () => _kategoriSelected = newName,
-                                          );
-                                        }
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Kategori berhasil diubah',
-                                            ),
-                                          ),
                                         );
-                                      }
-                                    }
-                                  },
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    color: Colors.red,
-                                  ),
-                                  onPressed: () async {
-                                    final ok = await showDialog<bool>(
-                                      context: context,
-                                      builder:
-                                          (dialogContext) => AlertDialog(
-                                            title: const Text(
-                                              'Hapus kategori?',
-                                            ),
-                                            content: Text(
-                                              'Kategori "$name" akan dihapus dari daftar. '
-                                              'Buku yang memakai kategori ini tidak dihapus dan akan dipindahkan ke "Tidak Berkategori".',
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed:
-                                                    () => Navigator.pop(
-                                                      dialogContext,
-                                                      false,
-                                                    ),
-                                                child: const Text('Batal'),
-                                              ),
-                                              FilledButton(
-                                                onPressed:
-                                                    () => Navigator.pop(
-                                                      dialogContext,
-                                                      true,
-                                                    ),
-                                                child: const Text('Hapus'),
-                                              ),
-                                            ],
-                                          ),
-                                    );
-                                    if (ok == true) {
-                                      await _service
-                                          .deleteCategoryAndReassignBooks(name);
-                                      if (mounted) {
-                                        if (_kategoriSelected == name) {
-                                          setState(
-                                            () => _kategoriSelected = null,
+                                        editController.dispose();
+                                        if (newName != null &&
+                                            newName.isNotEmpty) {
+                                          await _service.updateCategory(
+                                            name,
+                                            newName,
                                           );
+                                          if (mounted) {
+                                            if (_kategoriSelected == name) {
+                                              WidgetsBinding.instance
+                                                  .addPostFrameCallback((_) {
+                                                    if (mounted)
+                                                      setState(
+                                                        () =>
+                                                            _kategoriSelected =
+                                                                newName,
+                                                      );
+                                                  });
+                                            }
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'Kategori berhasil diubah',
+                                                ),
+                                              ),
+                                            );
+                                          }
                                         }
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Kategori dihapus dan buku dipindahkan',
-                                            ),
-                                          ),
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red,
+                                      ),
+                                      onPressed: () async {
+                                        final ok = await showDialog<bool>(
+                                          context: sheetCtx,
+                                          builder:
+                                              (dialogContext) => AlertDialog(
+                                                title: const Text(
+                                                  'Hapus kategori?',
+                                                ),
+                                                content: Text(
+                                                  'Kategori "$name" akan dihapus dari daftar. '
+                                                  'Buku yang memakai kategori ini tidak dihapus dan akan dipindahkan ke "Tidak Berkategori".',
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed:
+                                                        () => Navigator.pop(
+                                                          dialogContext,
+                                                          false,
+                                                        ),
+                                                    child: const Text('Batal'),
+                                                  ),
+                                                  FilledButton(
+                                                    onPressed:
+                                                        () => Navigator.pop(
+                                                          dialogContext,
+                                                          true,
+                                                        ),
+                                                    child: const Text('Hapus'),
+                                                  ),
+                                                ],
+                                              ),
                                         );
-                                      }
-                                    }
-                                  },
+                                        if (ok == true) {
+                                          await _service
+                                              .deleteCategoryAndReassignBooks(
+                                                name,
+                                              );
+                                          if (mounted) {
+                                            if (_kategoriSelected == name) {
+                                              WidgetsBinding.instance
+                                                  .addPostFrameCallback((_) {
+                                                    if (mounted)
+                                                      setState(
+                                                        () =>
+                                                            _kategoriSelected =
+                                                                null,
+                                                      );
+                                                  });
+                                            }
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'Kategori dihapus dan buku dipindahkan',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                            onTap: () {
-                              setState(() => _kategoriSelected = name);
-                              Navigator.pop(context);
+                                onTap: () {
+                                  Navigator.pop(sheetCtx);
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    if (mounted)
+                                      setState(() => _kategoriSelected = name);
+                                  });
+                                },
+                              );
                             },
                           );
                         },
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -460,17 +483,7 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
             _deskripsiController.text.isEmpty
                 ? null
                 : _deskripsiController.text,
-        tahunPembelian:
-            _tahunPembelianController.text.isEmpty
-                ? null
-                : int.parse(_tahunPembelianController.text),
-        hargaSatuan:
-            _hargaSatuanController.text.isEmpty
-                ? null
-                : double.parse(
-                  _hargaSatuanController.text.replaceAll(',', '.'),
-                ),
-        totalHarga: _totalHarga == 0 ? null : _totalHarga,
+        isbn: _isbnController.text.isEmpty ? null : _isbnController.text,
         coverUrl: coverUrl,
         coverPublicId: coverPublicId,
         totalPeminjaman: 0,
@@ -933,39 +946,12 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
               ),
               const SizedBox(height: 16),
               TextFormField(
-                controller: _tahunPembelianController,
+                controller: _isbnController,
                 decoration: const InputDecoration(
-                  labelText: 'Tahun Pembelian (opsional)',
+                  labelText: 'ISBN (opsional)',
                   border: OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value != null &&
-                      value.isNotEmpty &&
-                      int.tryParse(value) == null) {
-                    return 'Tahun pembelian harus berupa angka';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _hargaSatuanController,
-                decoration: const InputDecoration(
-                  labelText: 'Harga Satuan (opsional)',
-                  prefixText: 'Rp ',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                validator: (value) {
-                  if (value != null && value.isNotEmpty) {
-                    final v = double.tryParse(value.replaceAll(',', '.'));
-                    if (v == null || v < 0) return 'Harga tidak valid';
-                  }
-                  return null;
-                },
+                keyboardType: TextInputType.text,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -985,14 +971,6 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
                   return null;
                 },
               ),
-              if (_hargaSatuanController.text.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Total Harga: Rp ${_totalHarga.toStringAsFixed(0)}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,

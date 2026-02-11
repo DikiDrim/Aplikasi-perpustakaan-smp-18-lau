@@ -25,7 +25,7 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
     }
     try {
       DateTime? date;
-      
+
       if (timestamp is Timestamp) {
         date = timestamp.toDate();
       } else if (timestamp is String) {
@@ -35,7 +35,7 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
       } else if (timestamp is DateTime) {
         date = timestamp;
       }
-      
+
       if (date != null) {
         // Format sederhana: dd/MM/yyyy
         final day = date.day.toString().padLeft(2, '0');
@@ -48,7 +48,7 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
     }
     return 'Belum tersedia';
   }
-  
+
   String _formatDateForPDF(dynamic timestamp) {
     // Sama dengan _formatDate untuk konsistensi
     return _formatDate(timestamp);
@@ -56,79 +56,90 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
 
   Future<void> _printData() async {
     if (_isPrinting) return;
-    
+
     setState(() => _isPrinting = true);
-    
+
     try {
       // Initialize date formatting untuk PDF
       await initializeDateFormatting('id_ID', null);
-      
+
       final pdf = pw.Document();
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Padding(
-            padding: const pw.EdgeInsets.all(40),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                // Header
-                pw.Center(
-                  child: pw.Column(
-                    children: [
-                      pw.Text(
-                        'PERPUSTAKAAN SMPN 18 LAU',
-                        style: pw.TextStyle(
-                          fontSize: 20,
-                          fontWeight: pw.FontWeight.bold,
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return pw.Padding(
+              padding: const pw.EdgeInsets.all(40),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  pw.Center(
+                    child: pw.Column(
+                      children: [
+                        pw.Text(
+                          'PERPUSTAKAAN SMPN 18 LAU',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      pw.SizedBox(height: 8),
-                      pw.Text(
-                        'Data Anggota Perpustakaan',
-                        style: pw.TextStyle(
-                          fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
+                        pw.SizedBox(height: 8),
+                        pw.Text(
+                          'Data Anggota Perpustakaan',
+                          style: pw.TextStyle(
+                            fontSize: 16,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                pw.SizedBox(height: 30),
-                pw.Divider(),
-                pw.SizedBox(height: 20),
-                // Data Siswa
-                _buildInfoRow('Nama Lengkap', widget.siswa['nama'] ?? '-'),
-                pw.SizedBox(height: 12),
-                _buildInfoRow('NIS', widget.siswa['nis'] ?? '-'),
-                pw.SizedBox(height: 12),
-                _buildInfoRow('Username', widget.siswa['username'] ?? '-'),
-                pw.SizedBox(height: 12),
-                _buildInfoRow('Tanggal Terdaftar', _formatDateForPDF(widget.siswa['created_at'])),
-                pw.SizedBox(height: 30),
-                pw.Divider(),
-                pw.SizedBox(height: 20),
-                // Footer
-                pw.Align(
-                  alignment: pw.Alignment.centerRight,
-                  child: pw.Text(
-                    'Dicetak pada: ${DateFormat('dd/MM/yyyy HH:mm', 'id_ID').format(DateTime.now())}',
-                    style: const pw.TextStyle(fontSize: 10),
+                  pw.SizedBox(height: 30),
+                  pw.Divider(),
+                  pw.SizedBox(height: 20),
+                  // Data Siswa
+                  _buildInfoRow('Nama Lengkap', widget.siswa['nama'] ?? '-'),
+                  pw.SizedBox(height: 12),
+                  _buildInfoRow('NIS', widget.siswa['nis'] ?? '-'),
+                  pw.SizedBox(height: 12),
+                  _buildInfoRow(
+                    'Kelas',
+                    (widget.siswa['kelas'] != null &&
+                            widget.siswa['kelas'].toString().isNotEmpty)
+                        ? widget.siswa['kelas']
+                        : '-',
                   ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+                  pw.SizedBox(height: 12),
+                  _buildInfoRow('Username', widget.siswa['username'] ?? '-'),
+                  pw.SizedBox(height: 12),
+                  _buildInfoRow(
+                    'Tanggal Terdaftar',
+                    _formatDateForPDF(widget.siswa['created_at']),
+                  ),
+                  pw.SizedBox(height: 30),
+                  pw.Divider(),
+                  pw.SizedBox(height: 20),
+                  // Footer
+                  pw.Align(
+                    alignment: pw.Alignment.centerRight,
+                    child: pw.Text(
+                      'Dicetak pada: ${DateFormat('dd/MM/yyyy HH:mm', 'id_ID').format(DateTime.now())}',
+                      style: const pw.TextStyle(fontSize: 10),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
 
       await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdf.save(),
       );
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -164,9 +175,7 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
             style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
           ),
         ),
-        pw.Expanded(
-          child: pw.Text(value),
-        ),
+        pw.Expanded(child: pw.Text(value)),
       ],
     );
   }
@@ -180,16 +189,17 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            icon: _isPrinting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.print),
+            icon:
+                _isPrinting
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Icon(Icons.print),
             onPressed: _isPrinting ? null : _printData,
             tooltip: 'Cetak Data',
           ),
@@ -213,12 +223,27 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
                     children: [
                       CircleAvatar(
                         radius: 40,
-                        backgroundColor: const Color(0xFF0D47A1).withOpacity(0.1),
-                        child: const Icon(
-                          Icons.person,
-                          size: 40,
-                          color: Color(0xFF0D47A1),
-                        ),
+                        backgroundColor: const Color(
+                          0xFF0D47A1,
+                        ).withOpacity(0.1),
+                        backgroundImage:
+                            (widget.siswa['photo_url'] != null &&
+                                    widget.siswa['photo_url']
+                                        .toString()
+                                        .isNotEmpty)
+                                ? NetworkImage(widget.siswa['photo_url'])
+                                : null,
+                        child:
+                            (widget.siswa['photo_url'] == null ||
+                                    widget.siswa['photo_url']
+                                        .toString()
+                                        .isEmpty)
+                                ? const Icon(
+                                  Icons.person,
+                                  size: 40,
+                                  color: Color(0xFF0D47A1),
+                                )
+                                : null,
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -244,6 +269,16 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
                 const SizedBox(height: 16),
                 _buildInfoTile(
                   context,
+                  Icons.class_,
+                  'Kelas',
+                  (widget.siswa['kelas'] != null &&
+                          widget.siswa['kelas'].toString().isNotEmpty)
+                      ? widget.siswa['kelas']
+                      : 'Belum diatur',
+                ),
+                const SizedBox(height: 16),
+                _buildInfoTile(
+                  context,
                   Icons.person,
                   'Username',
                   widget.siswa['username'] ?? '-',
@@ -254,9 +289,9 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
                   Icons.calendar_today,
                   'Tanggal Terdaftar',
                   _formatDate(
-                    widget.siswa['created_at'] ?? 
-                    widget.siswa['createdAt'] ??
-                    widget.siswa['tanggal_terdaftar']
+                    widget.siswa['created_at'] ??
+                        widget.siswa['createdAt'] ??
+                        widget.siswa['tanggal_terdaftar'],
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -265,21 +300,23 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: _isPrinting ? null : _printData,
-                    icon: _isPrinting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.print),
-                    label: Text(_isPrinting ? 'Mencetak...' : 'Cetak Data Anggota'),
+                    icon:
+                        _isPrinting
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                            : const Icon(Icons.print),
+                    label: Text(
+                      _isPrinting ? 'Mencetak...' : 'Cetak Data Anggota',
+                    ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isPrinting
-                          ? Colors.grey
-                          : const Color(0xFF0D47A1),
+                      backgroundColor:
+                          _isPrinting ? Colors.grey : const Color(0xFF0D47A1),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
@@ -341,4 +378,3 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
     );
   }
 }
-

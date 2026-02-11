@@ -15,6 +15,23 @@ class _TambahSiswaScreenState extends State<TambahSiswaScreen> {
   final _nisController = TextEditingController();
   final _firestoreService = FirestoreService();
   bool _loading = false;
+  String? _selectedKelas;
+
+  // Daftar kelas SMP
+  final List<String> _kelasList = [
+    'VII-A',
+    'VII-B',
+    'VII-C',
+    'VII-D',
+    'VIII-A',
+    'VIII-B',
+    'VIII-C',
+    'VIII-D',
+    'IX-A',
+    'IX-B',
+    'IX-C',
+    'IX-D',
+  ];
 
   @override
   void dispose() {
@@ -36,6 +53,7 @@ class _TambahSiswaScreenState extends State<TambahSiswaScreen> {
       final accountInfo = await _firestoreService.addSiswa(
         nama: nama,
         nis: nis,
+        kelas: _selectedKelas,
       );
 
       if (!mounted) return;
@@ -57,6 +75,11 @@ class _TambahSiswaScreenState extends State<TambahSiswaScreen> {
                     Text('Nama: $nama'),
                     const SizedBox(height: 8),
                     Text('NIS: $nis'),
+                    if (_selectedKelas != null &&
+                        _selectedKelas!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text('Kelas: $_selectedKelas'),
+                    ],
                     const SizedBox(height: 16),
                     const Text(
                       'Informasi Login:',
@@ -151,6 +174,7 @@ class _TambahSiswaScreenState extends State<TambahSiswaScreen> {
                     Navigator.pop(context);
                     _namaController.clear();
                     _nisController.clear();
+                    setState(() => _selectedKelas = null);
                   },
                   child: const Text('OK'),
                 ),
@@ -234,6 +258,32 @@ class _TambahSiswaScreenState extends State<TambahSiswaScreen> {
                   }
                   if (!RegExp(r'^\d{6}$').hasMatch(value)) {
                     return 'NIS harus berupa angka';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 20),
+              DropdownButtonFormField<String>(
+                value: _selectedKelas,
+                decoration: const InputDecoration(
+                  labelText: 'Kelas',
+                  hintText: 'Pilih kelas siswa',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.class_),
+                ),
+                items:
+                    _kelasList.map((kelas) {
+                      return DropdownMenuItem<String>(
+                        value: kelas,
+                        child: Text(kelas),
+                      );
+                    }).toList(),
+                onChanged: (value) {
+                  setState(() => _selectedKelas = value);
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Kelas wajib dipilih';
                   }
                   return null;
                 },

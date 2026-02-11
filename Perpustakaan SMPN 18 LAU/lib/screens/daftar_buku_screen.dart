@@ -90,6 +90,14 @@ class _DaftarBukuScreenState extends State<DaftarBukuScreen> {
     // Hitung statistik
     final totalBuku = _allBukuList.length;
     final totalStok = _allBukuList.fold<int>(0, (sum, b) => sum + b.stok);
+    final totalRusak = _allBukuList.fold<int>(
+      0,
+      (sum, b) => sum + b.effectiveJumlahRusak,
+    );
+    final totalHilang = _allBukuList.fold<int>(
+      0,
+      (sum, b) => sum + b.effectiveJumlahHilang,
+    );
 
     // Hitung per kategori
     final Map<String, int> kategoriCount = {};
@@ -207,6 +215,38 @@ class _DaftarBukuScreenState extends State<DaftarBukuScreen> {
                         ),
                       ],
                     ),
+                    if (totalRusak > 0) ...[
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('Buku Rusak:'),
+                          pw.Text(
+                            '$totalRusak eksemplar',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.orange,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (totalHilang > 0) ...[
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('Buku Hilang:'),
+                          pw.Text(
+                            '$totalHilang eksemplar',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -304,6 +344,7 @@ class _DaftarBukuScreenState extends State<DaftarBukuScreen> {
                   2: const pw.FlexColumnWidth(3),
                   3: const pw.FlexColumnWidth(2),
                   4: const pw.FixedColumnWidth(50),
+                  5: const pw.FixedColumnWidth(60),
                 },
                 children: [
                   pw.TableRow(
@@ -348,11 +389,33 @@ class _DaftarBukuScreenState extends State<DaftarBukuScreen> {
                           textAlign: pw.TextAlign.center,
                         ),
                       ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          'Kondisi',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
                     ],
                   ),
                   ...sortedBuku.asMap().entries.map((entry) {
                     final idx = entry.key;
                     final buku = entry.value;
+                    final kondisi = buku.statusKondisi;
+                    // Build kondisi label with quantities
+                    String kondisiLabel;
+                    if (buku.effectiveJumlahRusak > 0 ||
+                        buku.effectiveJumlahHilang > 0) {
+                      final parts = <String>[];
+                      if (buku.effectiveJumlahRusak > 0)
+                        parts.add('R:${buku.effectiveJumlahRusak}');
+                      if (buku.effectiveJumlahHilang > 0)
+                        parts.add('H:${buku.effectiveJumlahHilang}');
+                      kondisiLabel = parts.join(' ');
+                    } else {
+                      kondisiLabel = kondisi;
+                    }
                     return pw.TableRow(
                       children: [
                         pw.Padding(
@@ -379,6 +442,25 @@ class _DaftarBukuScreenState extends State<DaftarBukuScreen> {
                           child: pw.Text(
                             '${buku.stok}',
                             textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(6),
+                          child: pw.Text(
+                            kondisiLabel,
+                            textAlign: pw.TextAlign.center,
+                            style: pw.TextStyle(
+                              color:
+                                  kondisi == 'Rusak'
+                                      ? PdfColors.orange
+                                      : kondisi == 'Hilang'
+                                      ? PdfColors.red
+                                      : PdfColors.green800,
+                              fontWeight:
+                                  kondisi != 'Tersedia'
+                                      ? pw.FontWeight.bold
+                                      : pw.FontWeight.normal,
+                            ),
                           ),
                         ),
                       ],

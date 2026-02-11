@@ -14,6 +14,8 @@ class PeminjamanModel {
   final int jumlah;
   final String? denda; // Hukuman/denda jika terlambat
   final bool terlambatNotified; // Apakah notifikasi keterlambatan sudah dikirim
+  final String?
+  kondisiBuku; // Kondisi buku saat dikembalikan: 'Baik', 'Rusak', 'Hilang'
 
   PeminjamanModel({
     this.id,
@@ -29,6 +31,7 @@ class PeminjamanModel {
     this.jumlah = 1,
     this.denda,
     this.terlambatNotified = false,
+    this.kondisiBuku,
   });
 
   factory PeminjamanModel.fromMap(Map<String, dynamic> map, String id) {
@@ -74,6 +77,7 @@ class PeminjamanModel {
       jumlah: parseInt(map['jumlah'] ?? map['qty'] ?? 1),
       denda: map['denda'] as String?,
       terlambatNotified: map['terlambat_notified'] == true,
+      kondisiBuku: map['kondisi_buku'] as String?,
     );
   }
 
@@ -95,6 +99,7 @@ class PeminjamanModel {
       'jumlah': jumlah,
       'denda': denda,
       'terlambat_notified': terlambatNotified,
+      'kondisi_buku': kondisiBuku,
     };
   }
 
@@ -112,6 +117,7 @@ class PeminjamanModel {
     int? jumlah,
     String? denda,
     bool? terlambatNotified,
+    String? kondisiBuku,
   }) {
     return PeminjamanModel(
       id: id ?? this.id,
@@ -127,6 +133,7 @@ class PeminjamanModel {
       jumlah: jumlah ?? this.jumlah,
       denda: denda ?? this.denda,
       terlambatNotified: terlambatNotified ?? this.terlambatNotified,
+      kondisiBuku: kondisiBuku ?? this.kondisiBuku,
     );
   }
 }

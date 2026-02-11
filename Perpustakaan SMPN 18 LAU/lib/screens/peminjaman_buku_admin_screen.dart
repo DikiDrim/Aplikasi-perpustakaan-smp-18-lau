@@ -6,7 +6,6 @@ import '../models/buku_model.dart';
 import '../models/peminjaman_model.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
-import '../services/ars_service_impl.dart';
 import '../services/app_notification_service.dart';
 import '../utils/async_action.dart';
 import '../utils/throttle.dart';
@@ -23,7 +22,6 @@ class PeminjamanBukuAdminScreen extends StatefulWidget {
 class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
     with SingleTickerProviderStateMixin {
   final FirestoreService _firestoreService = FirestoreService();
-  final ArsService _arsService = ArsService();
   final AppNotificationService _appNotificationService =
       AppNotificationService();
   final TextEditingController _searchSiswaController = TextEditingController();
@@ -43,6 +41,21 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
   List<Map<String, dynamic>> _siswaSearchResults = [];
   bool _searchingSiswa = false;
   late TabController _tabController;
+
+  static const List<String> _kelasList = [
+    'VII-A',
+    'VII-B',
+    'VII-C',
+    'VII-D',
+    'VIII-A',
+    'VIII-B',
+    'VIII-C',
+    'VIII-D',
+    'IX-A',
+    'IX-B',
+    'IX-C',
+    'IX-D',
+  ];
 
   @override
   void initState() {
@@ -245,27 +258,23 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
 
       final didRestock = await _firestoreService.addPeminjaman(peminjaman);
 
-      // ARS check REALTIME (trigger dengan stok sebelum dan jumlah dipinjam)
-      _arsService
-          .checkArsOnTransaction(
-            bukuId: buku.id!,
-            stokSebelumTransaksi: buku.stok,
-            jumlahDipinjam: qty,
-          )
-          .catchError((_) => null);
+      // ARS check sekarang dilakukan di dalam addPeminjaman
+      // (setelah stok dikurangi, SEBELUM auto-restock)
 
       // Notifikasi untuk siswa (tidak menghambat jika gagal)
       if (_selectedSiswaUid != null) {
+        final kelasNotif = kelas.isNotEmpty ? ' (Kelas: $kelas)' : '';
         _appNotificationService
             .createNotification(
               userId: _selectedSiswaUid!,
               title: 'Peminjaman Berhasil',
               body:
-                  'Buku "${buku.judul}" berhasil dipinjam. Jatuh tempo: ${dueDate.day}/${dueDate.month}/${dueDate.year}',
+                  'Buku "${buku.judul}"$kelasNotif berhasil dipinjam. Jatuh tempo: ${dueDate.day}/${dueDate.month}/${dueDate.year}',
               type: 'peminjaman',
               data: {
                 'buku_id': buku.id,
                 'judul_buku': buku.judul,
+                'kelas': kelas,
                 'tanggal_jatuh_tempo': dueDate.toIso8601String(),
               },
             )
@@ -432,8 +441,9 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
       _selectedSiswaUid = siswa['uid'] ?? siswa['id'];
       _namaController.text = siswa['nama'] ?? '';
       _nisController.text = siswa['nis'] ?? '';
-      // Biarkan kelas kosong - admin akan input sendiri
-      _kelasController.clear();
+      // Auto-fill kelas dari data siswa jika ada
+      final kelasData = siswa['kelas'] ?? '';
+      _kelasController.text = kelasData.toString();
       _searchSiswaController.text = '${siswa['nama']} (NIS: ${siswa['nis']})';
       _siswaSearchResults = [];
     });
@@ -758,6 +768,22 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                         color: Colors.grey[700],
                                       ),
                                     ),
+                                    if (_kelasController.text.isNotEmpty) ...[
+                                      SizedBox(width: 16),
+                                      Icon(
+                                        Icons.class_,
+                                        size: 16,
+                                        color: Colors.grey[600],
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Kelas: ${_kelasController.text}',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -765,20 +791,59 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                           // Input kelas untuk siswa terpilih
                           const SizedBox(height: 12),
                           Text(
-                            'Kelas (Opsional)',
+                            'Kelas',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                               color: Colors.grey[800],
                             ),
                           ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _kelasController.text.isNotEmpty
+                                ? 'Kelas terisi otomatis dari data siswa yang terdaftar.'
+                                : '⚠ Siswa belum memiliki kelas. Silakan isi kelas siswa.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color:
+                                  _kelasController.text.isNotEmpty
+                                      ? Colors.green
+                                      : Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           const SizedBox(height: 8),
-                          TextField(
-                            controller: _kelasController,
+                          DropdownButtonFormField<String>(
+                            value:
+                                _kelasController.text.isNotEmpty &&
+                                        _kelasList.contains(
+                                          _kelasController.text,
+                                        )
+                                    ? _kelasController.text
+                                    : null,
+                            hint: const Text('Pilih kelas'),
+                            isExpanded: true,
+                            items:
+                                _kelasList.map((k) {
+                                  return DropdownMenuItem(
+                                    value: k,
+                                    child: Text(k),
+                                  );
+                                }).toList(),
+                            onChanged:
+                                _kelasController.text.isNotEmpty
+                                    ? null // read-only jika sudah terisi otomatis
+                                    : (v) {
+                                      setState(() {
+                                        _kelasController.text = v ?? '';
+                                      });
+                                    },
                             decoration: InputDecoration(
-                              hintText: 'Masukkan kelas, contoh: 7A',
                               filled: true,
-                              fillColor: Colors.white,
+                              fillColor:
+                                  _kelasController.text.isNotEmpty
+                                      ? Colors.grey[200]
+                                      : Colors.white,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide(
@@ -801,6 +866,10 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                               prefixIcon: const Icon(
                                 Icons.class_,
                                 color: Color(0xFF0D47A1),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 14,
                               ),
                             ),
                           ),
@@ -984,10 +1053,29 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                       ),
                                     ),
                                     SizedBox(height: 8),
-                                    TextField(
-                                      controller: _kelasController,
+                                    DropdownButtonFormField<String>(
+                                      value:
+                                          _kelasController.text.isNotEmpty &&
+                                                  _kelasList.contains(
+                                                    _kelasController.text,
+                                                  )
+                                              ? _kelasController.text
+                                              : null,
+                                      hint: const Text('Pilih kelas'),
+                                      isExpanded: true,
+                                      items:
+                                          _kelasList.map((k) {
+                                            return DropdownMenuItem(
+                                              value: k,
+                                              child: Text(k),
+                                            );
+                                          }).toList(),
+                                      onChanged: (v) {
+                                        setState(() {
+                                          _kelasController.text = v ?? '';
+                                        });
+                                      },
                                       decoration: InputDecoration(
-                                        hintText: 'Contoh: 7A',
                                         filled: true,
                                         fillColor: Colors.grey[50],
                                         border: OutlineInputBorder(
@@ -1019,6 +1107,11 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                           Icons.class_,
                                           color: Color(0xFF0D47A1),
                                         ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 14,
+                                            ),
                                       ),
                                     ),
                                   ],
@@ -1097,10 +1190,11 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                               Icons.numbers,
                               color: Color(0xFF0D47A1),
                             ),
-                            helperText: 'Wajib diisi',
+                            helperText: '⚠ Wajib diisi',
                             helperStyle: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 11,
+                              color: Colors.red[700],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1172,13 +1266,15 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                             ),
                             helperText:
                                 _unit == null
-                                    ? 'Pilih satuan waktu'
+                                    ? '⚠ Pilih satuan waktu terlebih dahulu'
                                     : (_unit == 'hari'
-                                        ? 'Untuk peminjaman harian'
-                                        : '1 jam pelajaran = 45 menit (max 3 jam)'),
+                                        ? 'ⓘ Untuk peminjaman harian'
+                                        : 'ⓘ 1 jam pelajaran = 45 menit (maksimal 3 jam)'),
                             helperStyle: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 11,
+                              color:
+                                  _unit == null ? Colors.red : Colors.red[700],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1204,8 +1300,8 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                 _unit == null
                                     ? 'Isi angka durasi'
                                     : (_unit == 'hari'
-                                        ? 'Contoh: 3 (untuk 3 hari)'
-                                        : 'Contoh: 2 (untuk 2 jam pelajaran)'),
+                                        ? 'Masukkan angka, contoh: 3'
+                                        : 'Masukkan angka, contoh: 2'),
                             filled: true,
                             fillColor: Colors.grey[50],
                             border: OutlineInputBorder(
@@ -1229,7 +1325,12 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                   : Icons.access_time,
                               color: Color(0xFF0D47A1),
                             ),
-                            suffixText: _unit,
+                            suffixText:
+                                _unit == null
+                                    ? null
+                                    : (_unit == 'hari'
+                                        ? 'hari'
+                                        : 'jam pelajaran'),
                             suffixStyle: TextStyle(
                               color: Color(0xFF0D47A1),
                               fontSize: 14,
@@ -1237,13 +1338,15 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                             ),
                             helperText:
                                 _unit == null
-                                    ? 'Masukkan durasi setelah memilih satuan'
+                                    ? '⚠ Pilih satuan waktu terlebih dahulu'
                                     : (_unit == 'hari'
-                                        ? 'Masukkan durasi dalam hari'
-                                        : 'Max: 3 jam (1 jam = 45 menit)'),
+                                        ? 'ⓘ Masukkan durasi dalam hari'
+                                        : 'ⓘ Maksimal 3 jam pelajaran (1 jam = 45 menit)'),
                             helperStyle: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 11,
+                              color:
+                                  _unit == null ? Colors.red : Colors.red[700],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
