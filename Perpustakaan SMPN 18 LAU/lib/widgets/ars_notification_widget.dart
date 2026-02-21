@@ -299,15 +299,16 @@ class ArsNotificationListWidget extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
                     children: [
                       _buildInfoChip(
-                        'Stok Akhir: ${notification.stokAkhir}',
+                        'Stok Akhir: ${notification.stokAkhir} buku',
                         Colors.orange,
                       ),
-                      const SizedBox(width: 8),
                       _buildInfoChip(
-                        'Safety Stock: ${notification.safetyStock}',
+                        'Safety Stock: ${notification.safetyStock} buku',
                         Colors.blue,
                       ),
                     ],

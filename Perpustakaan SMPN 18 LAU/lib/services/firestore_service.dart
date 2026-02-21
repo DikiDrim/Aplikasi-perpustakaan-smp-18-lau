@@ -2211,6 +2211,233 @@ class FirestoreService {
     }
   }
 
+  /// **Module 2: Book Return with Mixed Conditions (Circulation)**
+  /// Extended return: records mixed book conditions (baik, rusak, hilang).
+  /// Allows returning books with different conditions in a single transaction.
+  Future<void> kembalikanBukuDenganKondisiGabungan(
+    String peminjamanId,
+    String bukuId, {
+    required int jumlahBaik,
+    required int jumlahRusak,
+    required int jumlahHilang,
+    String? denda,
+    bool isTerlambat = false,
+  }) async {
+    final totalKembali = jumlahBaik + jumlahRusak + jumlahHilang;
+    if (totalKembali <= 0) {
+      throw Exception('Jumlah buku yang dikembalikan harus lebih dari 0');
+    }
+
+    try {
+      final docRef = _firestore
+          .collection(_peminjamanCollection)
+          .doc(peminjamanId);
+
+      String? uidSiswa;
+      String? judulBuku;
+      String kelasInfo = '';
+
+      final snap = await docRef.get();
+      if (!snap.exists) {
+        throw Exception('Data peminjaman tidak ditemukan');
+      }
+
+      // Live doc: perform transaction update
+      await _firestore.runTransaction((tx) async {
+        final s = await tx.get(docRef);
+        if (!s.exists) return;
+        final data = s.data() as Map<String, dynamic>;
+        final sudahKembali = (data['jumlah_kembali'] ?? 0) as int;
+        final totalDipinjam = (data['jumlah'] ?? 1) as int;
+        final baruKembali = (sudahKembali + totalKembali).clamp(
+          0,
+          totalDipinjam,
+        );
+
+        final status =
+            baruKembali >= totalDipinjam ? 'dikembalikan' : 'dipinjam';
+
+        uidSiswa = data['uid_siswa'];
+        judulBuku = data['judul_buku'];
+        final kelasData = data['kelas'] as String?;
+        kelasInfo =
+            (kelasData != null && kelasData.isNotEmpty)
+                ? ' (Kelas: $kelasData)'
+                : '';
+
+        // Determine primary condition for record
+        String kondisiUtama;
+        if (jumlahHilang > 0 && jumlahRusak > 0) {
+          kondisiUtama = 'Rusak & Hilang';
+        } else if (jumlahHilang > 0) {
+          kondisiUtama = 'Hilang';
+        } else if (jumlahRusak > 0) {
+          kondisiUtama = 'Rusak';
+        } else {
+          kondisiUtama = 'Baik';
+        }
+
+        final updateData = <String, dynamic>{
+          'jumlah_kembali': baruKembali,
+          'status': status,
+          'tanggal_kembali': status == 'dikembalikan' ? Timestamp.now() : null,
+          'kondisi_buku': kondisiUtama,
+          'jumlah_baik_kembali': FieldValue.increment(jumlahBaik),
+          'jumlah_rusak_kembali': FieldValue.increment(jumlahRusak),
+          'jumlah_hilang_kembali': FieldValue.increment(jumlahHilang),
+        };
+
+        if (denda != null && denda.isNotEmpty) {
+          updateData['denda'] = denda;
+        }
+
+        tx.update(docRef, updateData);
+      });
+
+      // Restore stock for good books only
+      if (jumlahBaik > 0) {
+        await updateStokBuku(bukuId, jumlahBaik);
+      }
+
+      // Update master book inventory for damaged/lost books
+      if (jumlahRusak > 0 || jumlahHilang > 0) {
+        final bukuDoc =
+            await _firestore.collection(_collection).doc(bukuId).get();
+        if (bukuDoc.exists) {
+          final bukuData = bukuDoc.data() as Map<String, dynamic>;
+          final currentJumlahRusak = (bukuData['jumlah_rusak'] ?? 0) as int;
+          final currentJumlahHilang = (bukuData['jumlah_hilang'] ?? 0) as int;
+
+          final updateBukuData = <String, dynamic>{
+            'tanggal_status_kondisi': Timestamp.now(),
+          };
+
+          if (jumlahRusak > 0) {
+            updateBukuData['jumlah_rusak'] = currentJumlahRusak + jumlahRusak;
+          }
+          if (jumlahHilang > 0) {
+            updateBukuData['jumlah_hilang'] =
+                currentJumlahHilang + jumlahHilang;
+          }
+
+          // Update status_kondisi based on what was reported
+          if (jumlahHilang > 0 && jumlahRusak > 0) {
+            updateBukuData['status_kondisi'] = 'Rusak & Hilang';
+            updateBukuData['catatan_kondisi'] =
+                'Dilaporkan $jumlahRusak rusak dan $jumlahHilang hilang saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}';
+          } else if (jumlahHilang > 0) {
+            updateBukuData['status_kondisi'] = 'Hilang';
+            updateBukuData['catatan_kondisi'] =
+                'Dilaporkan $jumlahHilang hilang saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}';
+          } else {
+            updateBukuData['status_kondisi'] = 'Rusak';
+            updateBukuData['catatan_kondisi'] =
+                'Dilaporkan $jumlahRusak rusak saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}';
+          }
+
+          await _firestore
+              .collection(_collection)
+              .doc(bukuId)
+              .update(updateBukuData);
+        }
+
+        // Log to riwayat_kondisi_buku for rusak
+        if (jumlahRusak > 0) {
+          await _firestore.collection('riwayat_kondisi_buku').add({
+            'buku_id': bukuId,
+            'judul_buku': judulBuku ?? '',
+            'status_sebelum': 'Tersedia',
+            'status_sesudah': 'Rusak',
+            'catatan':
+                'Dilaporkan saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}',
+            'jumlah': jumlahRusak,
+            'peminjaman_id': peminjamanId,
+            'tanggal': Timestamp.now(),
+            'diubah_oleh': FirebaseAuth.instance.currentUser?.uid ?? '',
+          });
+        }
+
+        // Log to riwayat_kondisi_buku for hilang
+        if (jumlahHilang > 0) {
+          await _firestore.collection('riwayat_kondisi_buku').add({
+            'buku_id': bukuId,
+            'judul_buku': judulBuku ?? '',
+            'status_sebelum': 'Tersedia',
+            'status_sesudah': 'Hilang',
+            'catatan':
+                'Dilaporkan saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}',
+            'jumlah': jumlahHilang,
+            'peminjaman_id': peminjamanId,
+            'tanggal': Timestamp.now(),
+            'diubah_oleh': FirebaseAuth.instance.currentUser?.uid ?? '',
+          });
+        }
+
+        // Invalidate cache
+        _bukuCache = null;
+      }
+
+      // Send notification to student
+      if (uidSiswa != null && uidSiswa!.isNotEmpty && judulBuku != null) {
+        final appNotificationService = AppNotificationService();
+
+        String notifTitle;
+        String notifBody;
+        String notifType;
+
+        if (jumlahRusak > 0 && jumlahHilang > 0) {
+          notifTitle = 'Peringatan: Buku Rusak dan Hilang';
+          notifBody =
+              'Buku "$judulBuku"$kelasInfo dikembalikan dengan:\n'
+              '• $jumlahRusak buku dalam kondisi RUSAK\n'
+              '• $jumlahHilang buku dilaporkan HILANG\n\n'
+              'Peringatan: Harap lebih menjaga buku perpustakaan.';
+          notifType = 'peringatan_kondisi';
+        } else if (jumlahRusak > 0) {
+          notifTitle = 'Peringatan: Buku Dikembalikan Rusak';
+          notifBody =
+              'Buku "$judulBuku"$kelasInfo: $jumlahRusak dari ${totalKembali} buku dikembalikan dalam kondisi RUSAK.\n\n'
+              'Peringatan: Harap menjaga buku perpustakaan dengan baik.';
+          notifType = 'peringatan_kondisi';
+        } else if (jumlahHilang > 0) {
+          notifTitle = 'Peringatan: Buku Dilaporkan Hilang';
+          notifBody =
+              'Buku "$judulBuku"$kelasInfo: $jumlahHilang dari ${totalKembali} buku dilaporkan HILANG.\n\n'
+              'Peringatan: Kehilangan buku perpustakaan adalah pelanggaran serius.';
+          notifType = 'peringatan_kondisi';
+        } else if (isTerlambat) {
+          notifTitle = 'Buku Dikembalikan - Terlambat';
+          notifBody =
+              'Buku "$judulBuku"$kelasInfo ($totalKembali buku) telah dikembalikan dengan keterlambatan.\nPeringatan: Harap mengembalikan buku tepat waktu di lain kesempatan.';
+          notifType = 'keterlambatan';
+        } else {
+          notifTitle = 'Buku Berhasil Dikembalikan';
+          notifBody =
+              'Buku "$judulBuku"$kelasInfo ($totalKembali buku) telah berhasil dikembalikan dalam kondisi baik. Terima kasih!';
+          notifType = 'pengembalian';
+        }
+
+        await appNotificationService.createNotification(
+          userId: uidSiswa!,
+          title: notifTitle,
+          body: notifBody,
+          type: notifType,
+          data: {
+            'buku_id': bukuId,
+            'judul_buku': judulBuku,
+            'jumlah_baik': jumlahBaik,
+            'jumlah_rusak': jumlahRusak,
+            'jumlah_hilang': jumlahHilang,
+            'peminjaman_id': peminjamanId,
+            'is_terlambat': isTerlambat,
+          },
+        );
+      }
+    } catch (e) {
+      throw Exception('Gagal mengembalikan buku: $e');
+    }
+  }
+
   /// **Module 3: Reporting**
   /// Get all books currently marked as 'Rusak' or 'Hilang'
   Future<List<BukuModel>> getBukuRusakHilang() async {

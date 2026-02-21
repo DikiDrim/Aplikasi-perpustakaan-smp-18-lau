@@ -87,7 +87,11 @@ class _UbahKondisiBukuScreenState extends State<UbahKondisiBukuScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 16),
-                _buildConfirmRow('Stok Tersedia', '$_stokTersedia', _kTersedia),
+                _buildConfirmRow(
+                  'Stok Tersedia',
+                  '$_stokTersedia eksemplar',
+                  _kTersedia,
+                ),
                 const SizedBox(height: 8),
                 _buildConfirmRow(
                   'Jumlah Rusak',
@@ -255,28 +259,36 @@ class _UbahKondisiBukuScreenState extends State<UbahKondisiBukuScreen> {
                         color: _kSurface,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.start,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           _buildSmallInfo(
                             'Total Pool',
-                            '$_totalPool',
+                            '$_totalPool buku',
                             _kPrimary,
                           ),
                           _dividerDot(),
                           _buildSmallInfo(
                             'Tersedia',
-                            '$_stokTersedia',
+                            '$_stokTersedia buku',
                             _kTersedia,
                           ),
                           if (_jumlahRusak > 0) ...[
                             _dividerDot(),
-                            _buildSmallInfo('Rusak', '$_jumlahRusak', _kRusak),
+                            _buildSmallInfo(
+                              'Rusak',
+                              '$_jumlahRusak buku',
+                              _kRusak,
+                            ),
                           ],
                           if (_jumlahHilang > 0) ...[
                             _dividerDot(),
                             _buildSmallInfo(
                               'Hilang',
-                              '$_jumlahHilang',
+                              '$_jumlahHilang buku',
                               _kHilang,
                             ),
                           ],

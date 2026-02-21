@@ -198,7 +198,7 @@ class _PinjamBukuScreenState extends State<PinjamBukuScreen> {
                         _buildInfoRow('Tahun', widget.buku.tahun.toString()),
                         _buildInfoRow(
                           'Stok Tersedia',
-                          widget.buku.stok.toString(),
+                          '${widget.buku.stok} eksemplar',
                         ),
                         const SizedBox(height: 8),
                         Container(

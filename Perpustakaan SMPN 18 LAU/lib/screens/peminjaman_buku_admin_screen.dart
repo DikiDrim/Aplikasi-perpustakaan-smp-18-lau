@@ -1545,7 +1545,7 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                       child: ListTile(
                         title: Text(p.judulBuku),
                         subtitle: Text(
-                          '${p.namaPeminjam} • Jumlah: ${p.jumlah}',
+                          '${p.namaPeminjam} • Jumlah: ${p.jumlah} buku',
                         ),
                         trailing: Wrap(
                           spacing: 8,

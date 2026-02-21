@@ -58,6 +58,7 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
   }
 
   /// Dialog untuk memilih kondisi buku saat pengembalian
+  /// Memungkinkan input jumlah untuk setiap kondisi (Baik, Rusak, Hilang)
   Future<Map<String, dynamic>?> _showKondisiBukuDialog(
     BuildContext context, {
     required String judulBuku,
@@ -67,13 +68,19 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
     required bool isOverdue,
     required int totalHariTerlambat,
   }) async {
-    String selectedKondisi = 'Baik';
+    int jumlahBaik = sisa;
+    int jumlahRusak = 0;
+    int jumlahHilang = 0;
 
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
+            // Validasi total harus sama dengan sisa
+            final total = jumlahBaik + jumlahRusak + jumlahHilang;
+            final isValid = total == sisa;
+
             Color kondisiColor(String k) {
               switch (k) {
                 case 'Baik':
@@ -98,6 +105,116 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                 default:
                   return Icons.help;
               }
+            }
+
+            Widget buildQuantityRow(
+              String label,
+              int value,
+              int maxValue,
+              Function(int) onChanged,
+            ) {
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color:
+                      value > 0
+                          ? kondisiColor(label).withOpacity(0.1)
+                          : Colors.grey.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color:
+                        value > 0
+                            ? kondisiColor(label).withOpacity(0.3)
+                            : Colors.grey.withOpacity(0.2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      kondisiIcon(label),
+                      color: kondisiColor(label),
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: kondisiColor(label),
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    // Stepper controls
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          InkWell(
+                            onTap:
+                                value > 0 ? () => onChanged(value - 1) : null,
+                            borderRadius: const BorderRadius.horizontal(
+                              left: Radius.circular(8),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.remove,
+                                size: 18,
+                                color:
+                                    value > 0
+                                        ? Colors.grey[700]
+                                        : Colors.grey[300],
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 36,
+                            alignment: Alignment.center,
+                            child: Text(
+                              '$value',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: kondisiColor(label),
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap:
+                                total < sisa
+                                    ? () => onChanged(value + 1)
+                                    : null,
+                            borderRadius: const BorderRadius.horizontal(
+                              right: Radius.circular(8),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.add,
+                                size: 18,
+                                color:
+                                    total < sisa
+                                        ? Colors.grey[700]
+                                        : Colors.grey[300],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
             }
 
             return AlertDialog(
@@ -141,7 +258,10 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                             Text('Kelas: $kelas'),
                           const SizedBox(height: 4),
                           Text('Buku: $judulBuku'),
-                          Text('Jumlah: $sisa buku'),
+                          Text(
+                            'Jumlah dikembalikan: $sisa buku',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                           if (isOverdue) ...[
                             const SizedBox(height: 8),
                             Text(
@@ -158,7 +278,7 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Condition selector
+                    // Condition selector with quantities
                     const Text(
                       'Kondisi Buku',
                       style: TextStyle(
@@ -166,40 +286,76 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tentukan jumlah buku berdasarkan kondisinya:',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 12),
+
+                    buildQuantityRow('Baik', jumlahBaik, sisa, (val) {
+                      setDialogState(() {
+                        jumlahBaik = val;
+                      });
+                    }),
                     const SizedBox(height: 8),
-                    ...['Baik', 'Rusak', 'Hilang'].map((k) {
-                      return RadioListTile<String>(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        value: k,
-                        groupValue: selectedKondisi,
-                        title: Row(
-                          children: [
-                            Icon(
-                              kondisiIcon(k),
-                              color: kondisiColor(k),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              k,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: kondisiColor(k),
-                              ),
-                            ),
-                          ],
-                        ),
-                        onChanged: (v) {
-                          setDialogState(() => selectedKondisi = v!);
-                        },
-                      );
+                    buildQuantityRow('Rusak', jumlahRusak, sisa, (val) {
+                      setDialogState(() {
+                        jumlahRusak = val;
+                      });
+                    }),
+                    const SizedBox(height: 8),
+                    buildQuantityRow('Hilang', jumlahHilang, sisa, (val) {
+                      setDialogState(() {
+                        jumlahHilang = val;
+                      });
                     }),
 
+                    const SizedBox(height: 12),
+
+                    // Total indicator
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color:
+                            isValid
+                                ? Colors.green.withOpacity(0.1)
+                                : Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color:
+                              isValid
+                                  ? Colors.green.withOpacity(0.3)
+                                  : Colors.red.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isValid ? Icons.check_circle : Icons.info_outline,
+                            color: isValid ? Colors.green : Colors.red,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              isValid
+                                  ? 'Total: $total dari $sisa buku'
+                                  : 'Total: $total (harus $sisa buku)',
+                              style: TextStyle(
+                                color: isValid ? Colors.green : Colors.red,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                     // Warning info for damaged/lost
-                    if (selectedKondisi == 'Rusak' ||
-                        selectedKondisi == 'Hilang') ...[
-                      const SizedBox(height: 8),
+                    if (jumlahRusak > 0 || jumlahHilang > 0) ...[
+                      const SizedBox(height: 10),
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
@@ -219,9 +375,11 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                selectedKondisi == 'Rusak'
-                                    ? 'Siswa akan mendapat peringatan karena buku dikembalikan dalam kondisi rusak.'
-                                    : 'Siswa akan mendapat peringatan serius karena buku hilang.',
+                                jumlahRusak > 0 && jumlahHilang > 0
+                                    ? 'Siswa akan mendapat peringatan karena ${jumlahRusak} buku rusak dan ${jumlahHilang} buku hilang.'
+                                    : jumlahRusak > 0
+                                    ? 'Siswa akan mendapat peringatan karena ${jumlahRusak} buku dikembalikan rusak.'
+                                    : 'Siswa akan mendapat peringatan serius karena ${jumlahHilang} buku hilang.',
                                 style: const TextStyle(
                                   color: Colors.orange,
                                   fontWeight: FontWeight.w600,
@@ -272,11 +430,21 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                   child: const Text('Batal'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx, {'kondisi': selectedKondisi});
-                  },
+                  onPressed:
+                      isValid
+                          ? () {
+                            Navigator.pop(ctx, {
+                              'jumlahBaik': jumlahBaik,
+                              'jumlahRusak': jumlahRusak,
+                              'jumlahHilang': jumlahHilang,
+                            });
+                          }
+                          : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: kondisiColor(selectedKondisi),
+                    backgroundColor:
+                        jumlahRusak > 0 || jumlahHilang > 0
+                            ? Colors.orange
+                            : Colors.green,
                     foregroundColor: Colors.white,
                   ),
                   child: const Text('Ya, kembalikan'),
@@ -427,9 +595,9 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                         children: [
                           Text('Peminjam: ${d['nama_peminjam'] ?? '-'}'),
                           if (d['kelas'] != null) Text('Kelas: ${d['kelas']}'),
-                          Text('Jumlah dipinjam: $jumlah'),
+                          Text('Jumlah dipinjam: $jumlah buku'),
                           if (sudahKembali > 0)
-                            Text('Sudah kembali: $sudahKembali'),
+                            Text('Sudah kembali: $sudahKembali buku'),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -515,17 +683,23 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
 
                                     if (result == null) return;
 
-                                    final kondisi = result['kondisi'] as String;
+                                    final jumlahBaik =
+                                        (result['jumlahBaik'] as int?) ?? sisa;
+                                    final jumlahRusak =
+                                        (result['jumlahRusak'] as int?) ?? 0;
+                                    final jumlahHilang =
+                                        (result['jumlahHilang'] as int?) ?? 0;
                                     final judulBuku = d['judul_buku'] ?? '-';
 
                                     try {
                                       await runWithLoading(context, () async {
                                         await service
-                                            .kembalikanBukuDenganKondisi(
+                                            .kembalikanBukuDenganKondisiGabungan(
                                               id,
                                               d['buku_id'] as String,
-                                              sisa,
-                                              kondisiBuku: kondisi,
+                                              jumlahBaik: jumlahBaik,
+                                              jumlahRusak: jumlahRusak,
+                                              jumlahHilang: jumlahHilang,
                                               isTerlambat: isOverdue,
                                             );
                                       });
@@ -533,18 +707,28 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
                                       if (!mounted) return;
 
                                       String subtitle;
-                                      if (kondisi == 'Rusak') {
+                                      final parts = <String>[];
+                                      if (jumlahBaik > 0) {
+                                        parts.add(
+                                          '$jumlahBaik buku kondisi baik',
+                                        );
+                                      }
+                                      if (jumlahRusak > 0) {
+                                        parts.add('$jumlahRusak buku rusak');
+                                      }
+                                      if (jumlahHilang > 0) {
+                                        parts.add('$jumlahHilang buku hilang');
+                                      }
+
+                                      if (jumlahRusak > 0 || jumlahHilang > 0) {
                                         subtitle =
-                                            'Buku "$judulBuku" dikembalikan dalam kondisi RUSAK.\nSiswa telah diberi peringatan.';
-                                      } else if (kondisi == 'Hilang') {
-                                        subtitle =
-                                            'Buku "$judulBuku" dilaporkan HILANG.\nSiswa telah diberi peringatan serius.';
+                                            'Buku "$judulBuku" dikembalikan:\n${parts.join(', ')}.\nSiswa telah diberi peringatan.';
                                       } else if (isOverdue) {
                                         subtitle =
                                             'Buku "$judulBuku" telah dikembalikan.\nSiswa telah diberi peringatan keterlambatan.';
                                       } else {
                                         subtitle =
-                                            'Buku "$judulBuku" telah dikembalikan';
+                                            'Buku "$judulBuku" telah dikembalikan dalam kondisi baik.';
                                       }
 
                                       await SuccessPopup.show(

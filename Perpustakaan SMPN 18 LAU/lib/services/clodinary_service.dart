@@ -144,7 +144,7 @@ class ClodinaryService {
     }
   }
 
-  /// Upload file PDF ke Cloudinary
+  /// Upload file PDF ke Cloudinary menggunakan raw upload endpoint
   /// Mengembalikan map dengan 'url' dan 'publicId'
   Future<Map<String, String>?> uploadPdfToCloudinary(
     File pdfFile,
@@ -153,6 +153,12 @@ class ClodinaryService {
     try {
       if (!await pdfFile.exists()) {
         throw 'File PDF tidak ditemukan.';
+      }
+
+      final cloudName = ClaudinaryApiConfig.cloudinarycloudname;
+      final uploadPreset = ClaudinaryApiConfig.clodinaryuploadpreset;
+      if (cloudName.isEmpty || uploadPreset.isEmpty) {
+        throw 'Konfigurasi Cloudinary tidak lengkap (cloud name/preset).';
       }
 
       // Bersihkan publicId dari karakter yang tidak valid
@@ -166,57 +172,78 @@ class ClodinaryService {
         );
       }
 
-      // Cloudinary bisa handle PDF sebagai Image resource type
-      // Ini lebih kompatibel dengan upload preset unsigned
-      final fileToUpload = CloudinaryFile.fromFile(
-        pdfFile.path,
-        resourceType:
-            CloudinaryResourceType
-                .Auto, // PDF sebagai image (Cloudinary support ini)
-        publicId: cleanPublicId,
+      // Baca file sebagai bytes
+      final bytes = await pdfFile.readAsBytes();
+      final fileName = pdfFile.path.split(Platform.pathSeparator).last;
+
+      // Log untuk debugging
+      final previewHex = bytes
+          .take(8)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join(' ');
+      print(
+        'Cloudinary upload (file): filename=$fileName, size=${bytes.length}, first8=$previewHex',
       );
 
-      final response = await _cloudinary.uploadFile(fileToUpload);
+      // Gunakan raw upload endpoint untuk PDF
+      final uri = Uri.parse(
+        'https://api.cloudinary.com/v1_1/$cloudName/raw/upload',
+      );
+      final request = http.MultipartRequest('POST', uri)
+        ..fields['upload_preset'] = uploadPreset;
 
-      if (response.secureUrl.isEmpty) {
-        throw 'URL tidak diterima dari Cloudinary';
+      if (cleanPublicId != null) {
+        request.fields['public_id'] = cleanPublicId;
       }
 
-      return {'url': response.secureUrl, 'publicId': response.publicId};
-    } on CloudinaryException catch (e) {
-      print('Cloudinary PDF upload error: ${e.message}');
-      print('Error details: ${e.toString()}');
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: fileName,
+          contentType: http_parser.MediaType('application', 'pdf'),
+        ),
+      );
 
-      // Berikan pesan error yang lebih informatif
-      String errorMsg = 'Gagal mengunggah PDF ke Cloudinary';
-      if (e.message != null && e.message!.isNotEmpty) {
-        errorMsg += ': ${e.message}';
+      final resp = await request.send();
+      final body = await resp.stream.bytesToString();
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final decoded = jsonDecode(body) as Map<String, dynamic>;
+        final url = decoded['secure_url'] as String?;
+        final publicId = decoded['public_id'] as String?;
+        if (url == null || url.isEmpty) {
+          throw 'URL tidak diterima dari Cloudinary';
+        }
+        print(
+          'Cloudinary raw upload successful: public_id=${publicId ?? cleanPublicId}',
+        );
+        return {'url': url, 'publicId': publicId ?? cleanPublicId ?? ''};
       }
 
-      throw errorMsg;
+      print('Cloudinary raw upload failed (${resp.statusCode}): $body');
+
+      // Parse error response untuk pesan yang lebih jelas
+      try {
+        final errorData = jsonDecode(body) as Map<String, dynamic>;
+        final errorMsg = errorData['error']?['message'] ?? body;
+        throw 'Gagal mengunggah file buku: Error ${resp.statusCode}: $errorMsg';
+      } catch (e) {
+        if (e is String) rethrow;
+        throw 'Gagal mengunggah file buku: Error ${resp.statusCode}: $body';
+      }
     } catch (e) {
       print('PDF Upload error: $e');
       print('Error type: ${e.runtimeType}');
 
-      // Handle DioException atau error HTTP lainnya (400, 401, dll)
+      // Jika error sudah berupa string yang kita throw, lempar langsung
+      if (e is String) {
+        throw e;
+      }
+
+      // Handle error lainnya
       final errorStr = e.toString();
-      if (errorStr.contains('400') || errorStr.contains('bad response')) {
-        throw 'Error 400: Request tidak valid.\n\n'
-            'Kemungkinan penyebab:\n'
-            '1. Upload Preset tidak dikonfigurasi untuk menerima file PDF\n'
-            '2. File PDF terlalu besar (melebihi batas upload preset)\n'
-            '3. Upload Preset tidak unsigned atau tidak dikonfigurasi dengan benar\n\n'
-            'Solusi:\n'
-            '1. Buka Cloudinary Console > Settings > Upload\n'
-            '2. Edit Upload Preset yang digunakan\n'
-            '3. Pastikan "Signing mode" = "Unsigned" atau "Authenticated"\n'
-            '4. Pastikan tidak ada batasan file type yang memblokir PDF\n'
-            '5. Pastikan "Allowed formats" termasuk PDF atau kosongkan untuk allow all';
-      } else if (errorStr.contains('401') ||
-          errorStr.contains('unauthorized')) {
-        throw 'Error 401: Tidak memiliki izin.\n'
-            'Pastikan Upload Preset dikonfigurasi dengan benar di Cloudinary Console.';
-      } else if (errorStr.contains('413') || errorStr.contains('too large')) {
+      if (errorStr.contains('413') || errorStr.contains('too large')) {
         throw 'Error: File terlalu besar.\n'
             'Ukuran file PDF melebihi batas yang diizinkan oleh Upload Preset.';
       }

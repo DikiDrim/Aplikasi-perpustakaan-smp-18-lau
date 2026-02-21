@@ -411,7 +411,7 @@ class _StudentRiwayatScreenState extends State<StudentRiwayatScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const SizedBox(height: 4),
-                                Text('Jumlah: ${d['jumlah'] ?? 1}'),
+                                Text('Jumlah: ${d['jumlah'] ?? 1} buku'),
                                 Text(
                                   'Pinjam: ${_formatDate(tanggalPinjam?.toDate())}',
                                 ),

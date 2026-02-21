@@ -125,7 +125,7 @@ class BukuCard extends StatelessWidget {
                           children: [
                             _buildPill(
                               buku.stok > 0
-                                  ? 'Stok: ${buku.stok}'
+                                  ? 'Stok: ${buku.stok} buku'
                                   : 'Stok Habis',
                               buku.stok > 0
                                   ? const Color(0xFF2E7D32)

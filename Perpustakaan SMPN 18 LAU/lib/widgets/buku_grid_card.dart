@@ -103,7 +103,9 @@ class BukuGridCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        buku.stok > 0 ? 'Stok: ${buku.stok}' : 'Stok Habis',
+                        buku.stok > 0
+                            ? 'Stok: ${buku.stok} buku'
+                            : 'Stok Habis',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11,

@@ -69,32 +69,176 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
     final buku = _currentBuku ?? widget.buku;
     final controller = TextEditingController(text: buku.stok.toString());
 
+    // Calculate total pool (stok + rusak + hilang)
+    final totalPool =
+        buku.stok + buku.effectiveJumlahRusak + buku.effectiveJumlahHilang;
+    final hasRusakHilang =
+        buku.effectiveJumlahRusak > 0 || buku.effectiveJumlahHilang > 0;
+
     final ok = await showDialog<bool>(
       context: context,
-      builder:
-          (_) => AlertDialog(
-            title: const Text('Atur Stok Buku'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Stok baru'),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final newStok = int.tryParse(controller.text.trim()) ?? 0;
+            final newTotalPool =
+                newStok +
+                buku.effectiveJumlahRusak +
+                buku.effectiveJumlahHilang;
+            final isIncrease = newStok > buku.stok;
+            final isDecrease = newStok < buku.stok;
+
+            return AlertDialog(
+              title: const Text('Atur Stok Buku'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Current stock info
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Stok saat ini: ${buku.stok}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          if (hasRusakHilang) ...[
+                            const SizedBox(height: 4),
+                            if (buku.effectiveJumlahRusak > 0)
+                              Text(
+                                'Buku rusak: ${buku.effectiveJumlahRusak}',
+                                style: const TextStyle(
+                                  color: Color(0xFFE65100),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            if (buku.effectiveJumlahHilang > 0)
+                              Text(
+                                'Buku hilang: ${buku.effectiveJumlahHilang}',
+                                style: const TextStyle(
+                                  color: Color(0xFFC62828),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Total pool: $totalPool',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Stok baru',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    // Preview changes
+                    if (newStok != buku.stok)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color:
+                              isIncrease
+                                  ? Colors.green.withOpacity(0.1)
+                                  : Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color:
+                                isIncrease
+                                    ? Colors.green.withOpacity(0.3)
+                                    : Colors.orange.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isIncrease
+                                  ? Icons.add_circle_outline
+                                  : Icons.remove_circle_outline,
+                              color: isIncrease ? Colors.green : Colors.orange,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                isIncrease
+                                    ? 'Menambah ${newStok - buku.stok} stok (total pool: $newTotalPool)'
+                                    : 'Mengurangi ${buku.stok - newStok} stok (total pool: $newTotalPool)',
+                                style: TextStyle(
+                                  color:
+                                      isIncrease ? Colors.green : Colors.orange,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (hasRusakHilang && isIncrease) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: Colors.blue,
+                              size: 18,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Catatan: Buku rusak/hilang tidak akan berubah. Gunakan "Atur Buku Rusak" untuk mengubah jumlah rusak/hilang.',
+                                style: TextStyle(
+                                  color: Colors.blue,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Batal'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Simpan'),
                 ),
               ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Batal'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Simpan'),
-              ),
-            ],
-          ),
+            );
+          },
+        );
+      },
     );
 
     if (ok == true) {
@@ -387,13 +531,13 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
                                   _infoTile(
                                     Icons.inventory_2_outlined,
                                     'Stok Tersedia',
-                                    buku.stok.toString(),
+                                    '${buku.stok} eksemplar',
                                     const Color(0xFF455A64),
                                   ),
                                   _infoTile(
                                     Icons.trending_up_outlined,
                                     'Dipinjam Hari Ini',
-                                    _totalLoansToday.toString(),
+                                    '$_totalLoansToday kali pinjam',
                                     const Color(0xFF455A64),
                                   ),
                                   if (buku.effectiveJumlahRusak > 0)

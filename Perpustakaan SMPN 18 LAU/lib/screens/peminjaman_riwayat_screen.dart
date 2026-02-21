@@ -733,7 +733,7 @@ class _PeminjamanRiwayatScreenState extends State<PeminjamanRiwayatScreen> {
                                           if (d['kelas'] != null)
                                             Text('Kelas: ${d['kelas']}'),
                                           if (d['jumlah'] != null)
-                                            Text('Jumlah: ${d['jumlah']}'),
+                                            Text('Jumlah: ${d['jumlah']} buku'),
                                           if (d['kondisi_buku'] != null &&
                                               d['kondisi_buku']
                                                   .toString()
