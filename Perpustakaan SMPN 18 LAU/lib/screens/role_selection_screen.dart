@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
   const RoleSelectionScreen({super.key});
@@ -13,10 +14,40 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   void initState() {
     super.initState();
     // Auto-skip login jika sudah authenticated di device ini
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+        // Check role to route to correct dashboard
+        try {
+          final doc =
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid)
+                  .get();
+          final role = doc.data()?['role'];
+          if (!mounted) return;
+          if (role == 'admin') {
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/home',
+              (route) => false,
+            );
+          } else {
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/student-dashboard',
+              (route) => false,
+            );
+          }
+        } catch (_) {
+          if (mounted) {
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/home',
+              (route) => false,
+            );
+          }
+        }
       }
     });
   }

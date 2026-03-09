@@ -15,6 +15,7 @@ import 'screens/role_selection_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/login_siswa_screen.dart';
 import 'screens/register_screen.dart';
+import 'screens/student_dashboard_screen.dart';
 import 'services/notification_service.dart';
 import 'utils/admin_setup.dart';
 import 'providers/global_loading_provider.dart';
@@ -146,6 +147,7 @@ class MyApp extends StatelessWidget {
           '/login-siswa': (_) => const LoginSiswaScreen(),
           '/register': (_) => const RegisterScreen(),
           '/home': (_) => const HomeScreen(),
+          '/student-dashboard': (_) => const StudentDashboardScreen(),
         },
         builder: (context, child) {
           // Inject global loading overlay above all routes

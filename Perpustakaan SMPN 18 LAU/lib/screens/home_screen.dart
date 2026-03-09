@@ -326,206 +326,239 @@ class _HomeScreenState extends State<HomeScreen> {
         appBar: AppBar(
           title: const Text(
             'Perpustakaan SMPN 18 LAU',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
           ),
           centerTitle: true,
           elevation: 0,
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF0D47A1),
+                  Color(0xFF1565C0),
+                  Color(0xFF1976D2),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
           actions: [if (isAdmin) const ArsNotificationWidget()],
         ),
         drawer:
             isAdmin
                 ? Drawer(
                   child: SafeArea(
-                    child: ListView(
-                      padding: EdgeInsets.zero,
+                    child: Column(
                       children: [
-                        DrawerHeader(
-                          decoration: BoxDecoration(color: Color(0xFF0D47A1)),
+                        // Gradient Header with user info
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(20, 30, 20, 20),
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Color(0xFF0D47A1),
+                                Color(0xFF1565C0),
+                                Color(0xFF1976D2),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
                           child: Column(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: Center(
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.5),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: CircleAvatar(
+                                  radius: 32,
+                                  backgroundColor: Colors.white.withOpacity(
+                                    0.2,
+                                  ),
                                   child: Image.asset(
                                     'assets/images/Tutwurihandayani-.png',
-                                    height: 80,
-                                    width: 80,
+                                    height: 44,
+                                    width: 44,
                                     fit: BoxFit.contain,
                                     errorBuilder: (context, error, stackTrace) {
-                                      return Icon(
-                                        Icons.library_books,
-                                        size: 80,
+                                      return const Icon(
+                                        Icons.admin_panel_settings,
+                                        size: 32,
                                         color: Colors.white,
                                       );
                                     },
                                   ),
                                 ),
                               ),
-                              Align(
-                                alignment: Alignment.bottomLeft,
-                                child: Text(
-                                  'Menu Admin',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              const SizedBox(height: 14),
+                              const Text(
+                                'Administrator',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                auth.currentUser?.email ?? 'admin@perpustakaan',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.85),
+                                  fontSize: 13,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        // Admin drawer: show ARS notifications (same as bell)
-                        StreamBuilder<List<dynamic>>(
-                          stream: _arsService.getUnreadNotificationsStream(),
-                          builder: (context, snapshot) {
-                            final unreadCount = snapshot.data?.length ?? 0;
-                            return ListTile(
-                              leading: Stack(
-                                children: [
-                                  const Icon(
-                                    Icons.notifications,
-                                    color: Colors.orange,
-                                  ),
-                                  if (unreadCount > 0)
-                                    Positioned(
-                                      right: 0,
-                                      top: 0,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(2),
-                                        decoration: const BoxDecoration(
-                                          color: Colors.red,
-                                          shape: BoxShape.circle,
+                        // Menu items
+                        Expanded(
+                          child: ListView(
+                            padding: EdgeInsets.zero,
+                            children: [
+                              // Section: Notifikasi
+                              _DrawerSectionHeader(title: 'NOTIFIKASI'),
+                              StreamBuilder<List<dynamic>>(
+                                stream:
+                                    _arsService.getUnreadNotificationsStream(),
+                                builder: (context, snapshot) {
+                                  final unreadCount =
+                                      snapshot.data?.length ?? 0;
+                                  return _DrawerMenuItem(
+                                    icon: Icons.notifications_active_rounded,
+                                    iconColor: Colors.orange,
+                                    title: 'Notifikasi ARS',
+                                    badge:
+                                        unreadCount > 0
+                                            ? (unreadCount > 9
+                                                ? '9+'
+                                                : '$unreadCount')
+                                            : null,
+                                    subtitle:
+                                        unreadCount > 0
+                                            ? '$unreadCount notifikasi baru'
+                                            : null,
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (_) =>
+                                                  const ArsNotificationsScreen(),
                                         ),
-                                        constraints: const BoxConstraints(
-                                          minWidth: 14,
-                                          minHeight: 14,
-                                        ),
-                                        child: Text(
-                                          unreadCount > 9
-                                              ? '9+'
-                                              : '$unreadCount',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 8,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                              // Section: Perpustakaan
+                              _DrawerSectionHeader(title: 'PERPUSTAKAAN'),
+                              _DrawerMenuItem(
+                                icon: Icons.history_rounded,
+                                iconColor: const Color(0xFF5C6BC0),
+                                title: 'Riwayat Peminjaman',
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (_) =>
+                                              const PeminjamanRiwayatScreen(),
                                     ),
-                                ],
+                                  );
+                                },
                               ),
-                              title: const Text('Notifikasi ARS'),
-                              subtitle:
-                                  unreadCount > 0
-                                      ? Text(
-                                        '$unreadCount notifikasi ARS baru',
-                                        style: const TextStyle(
-                                          color: Colors.orange,
-                                          fontSize: 12,
-                                        ),
-                                      )
-                                      : null,
-                              onTap: () {
-                                Navigator.pop(context);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (_) => const ArsNotificationsScreen(),
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                        const Divider(),
-                        ListTile(
-                          leading: const Icon(Icons.history),
-                          title: const Text('Riwayat Peminjaman'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const PeminjamanRiwayatScreen(),
+                              // Section: Anggota
+                              _DrawerSectionHeader(title: 'ANGGOTA'),
+                              _DrawerMenuItem(
+                                icon: Icons.people_alt_rounded,
+                                iconColor: const Color(0xFF26A69A),
+                                title: 'Daftar Anggota Perpus',
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (_) => const DaftarAnggotaScreen(),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
-                        const Divider(),
-                        ListTile(
-                          leading: const Icon(Icons.people),
-                          title: const Text('Daftar Anggota Perpus'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const DaftarAnggotaScreen(),
+                              _DrawerMenuItem(
+                                icon: Icons.person_add_alt_1_rounded,
+                                iconColor: Colors.orange,
+                                title: 'Persetujuan Pendaftaran',
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (_) => const ApproveSiswaScreen(),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(
-                            Icons.person_add,
-                            color: Colors.orange,
+                              // Section: Laporan
+                              _DrawerSectionHeader(title: 'LAPORAN'),
+                              _DrawerMenuItem(
+                                icon: Icons.report_problem_rounded,
+                                iconColor: const Color(0xFFE53935),
+                                title: 'Buku Rusak / Hilang',
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (_) =>
+                                              const LaporanBukuRusakHilangScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              const Divider(height: 1),
+                              const SizedBox(height: 8),
+                              _DrawerMenuItem(
+                                icon: Icons.logout_rounded,
+                                iconColor: Colors.red,
+                                title: 'Keluar',
+                                titleColor: Colors.red,
+                                onTap: () async {
+                                  if (!Throttle.allow('logout_admin')) return;
+                                  Navigator.pop(context);
+                                  await runWithLoading(context, () async {
+                                    await context
+                                        .read<AuthProvider>()
+                                        .signOut();
+                                    if (context.mounted) {
+                                      Navigator.pushNamedAndRemoveUntil(
+                                        context,
+                                        '/',
+                                        (route) => false,
+                                      );
+                                    }
+                                  }, message: 'Keluar dari akun...');
+                                },
+                              ),
+                            ],
                           ),
-                          title: const Text('Persetujuan Pendaftaran'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ApproveSiswaScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(
-                            Icons.report_problem,
-                            color: Color(0xFFE53935),
-                          ),
-                          title: const Text('Buku Rusak/Hilang'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => const LaporanBukuRusakHilangScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        const Divider(),
-                        ListTile(
-                          leading: const Icon(Icons.logout, color: Colors.red),
-                          title: const Text(
-                            'Keluar',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red,
-                            ),
-                          ),
-                          onTap: () async {
-                            if (!Throttle.allow('logout_admin')) return;
-                            Navigator.pop(context);
-                            await runWithLoading(context, () async {
-                              await context.read<AuthProvider>().signOut();
-                              if (context.mounted) {
-                                Navigator.pushNamedAndRemoveUntil(
-                                  context,
-                                  '/',
-                                  (route) => false,
-                                );
-                              }
-                            }, message: 'Keluar dari akun...');
-                          },
                         ),
                       ],
                     ),
@@ -690,155 +723,174 @@ class _HomeScreenState extends State<HomeScreen> {
         body:
             isAdmin
                 ? SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
                   child: Column(
                     children: [
                       // Header dengan carousel foto perpustakaan
-                      SizedBox(
-                        width: double.infinity,
-                        height: 250,
-                        child: Stack(
-                          children: [
-                            // Carousel foto
-                            PageView.builder(
-                              controller: _pageController,
-                              onPageChanged: (index) {
-                                setState(() {
-                                  _currentPage = index;
-                                });
-                              },
-                              itemCount: _libraryPhotos.length,
-                              itemBuilder: (context, index) {
-                                return Container(
-                                  width: double.infinity,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        const Color(
-                                          0xFF0D47A1,
-                                        ).withOpacity(0.8),
-                                        const Color(
-                                          0xFF0D47A1,
-                                        ).withOpacity(0.9),
-                                      ],
-                                    ),
-                                  ),
-                                  child: Stack(
+                      ClipRRect(
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(28),
+                          bottomRight: Radius.circular(28),
+                        ),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 240,
+                          child: Stack(
+                            children: [
+                              // Carousel foto
+                              PageView.builder(
+                                controller: _pageController,
+                                onPageChanged: (index) {
+                                  setState(() {
+                                    _currentPage = index;
+                                  });
+                                },
+                                itemCount: _libraryPhotos.length,
+                                itemBuilder: (context, index) {
+                                  return Stack(
                                     fit: StackFit.expand,
                                     children: [
                                       // Foto perpustakaan
                                       _buildImage(_libraryPhotos[index]),
-                                      // Overlay gelap untuk kontras teks
+                                      // Overlay gradient
                                       Container(
                                         decoration: BoxDecoration(
                                           gradient: LinearGradient(
                                             begin: Alignment.topCenter,
                                             end: Alignment.bottomCenter,
                                             colors: [
-                                              Colors.transparent,
-                                              Colors.black.withOpacity(0.5),
+                                              Colors.black.withOpacity(0.1),
+                                              Colors.black.withOpacity(0.6),
                                             ],
                                           ),
                                         ),
                                       ),
                                     ],
-                                  ),
-                                );
-                              },
-                            ),
-                            // Teks di bawah
-                            Positioned(
-                              bottom: 30,
-                              left: 0,
-                              right: 0,
-                              child: Column(
-                                children: [
-                                  const Text(
-                                    'Perpustakaan SMPN 18 LAU',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black54,
-                                          blurRadius: 4,
-                                          offset: Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Dashboard Admin',
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.95),
-                                      fontSize: 15,
-                                      shadows: const [
-                                        Shadow(
-                                          color: Colors.black54,
-                                          blurRadius: 4,
-                                          offset: Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+                                  );
+                                },
                               ),
-                            ),
-                            // Indicator dots
-                            Positioned(
-                              bottom: 10,
-                              left: 0,
-                              right: 0,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: List.generate(
-                                  _libraryPhotos.length,
-                                  (index) => Container(
-                                    width: 8,
-                                    height: 8,
-                                    margin: const EdgeInsets.symmetric(
-                                      horizontal: 4,
+                              // Teks
+                              Positioned(
+                                bottom: 36,
+                                left: 24,
+                                right: 24,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Selamat Datang!',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        letterSpacing: 0.5,
+                                      ),
                                     ),
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color:
-                                          _currentPage == index
-                                              ? Colors.white
-                                              : Colors.white.withOpacity(0.5),
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      'Perpustakaan SMPN 18 LAU',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.3,
+                                        shadows: [
+                                          Shadow(
+                                            color: Colors.black54,
+                                            blurRadius: 6,
+                                            offset: Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Indicator dots
+                              Positioned(
+                                bottom: 12,
+                                left: 0,
+                                right: 0,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: List.generate(
+                                    _libraryPhotos.length,
+                                    (index) => AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
+                                      width: _currentPage == index ? 24 : 8,
+                                      height: 8,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(4),
+                                        color:
+                                            _currentPage == index
+                                                ? Colors.white
+                                                : Colors.white.withOpacity(0.4),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                      // Quick Actions
+
+                      // Quick Actions Section
                       Padding(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Menu Utama',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0D47A1),
-                              ),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 4,
+                                  height: 22,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFF0D47A1),
+                                        Color(0xFF42A5F5),
+                                      ],
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                    ),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Text(
+                                  'Menu Utama',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1A237E),
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 16),
-                            Wrap(
-                              spacing: 16,
-                              runSpacing: 16,
+                            const SizedBox(height: 18),
+                            GridView.count(
+                              crossAxisCount: 2,
+                              mainAxisSpacing: 14,
+                              crossAxisSpacing: 14,
+                              childAspectRatio: 1.15,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
                               children: [
                                 _QuickAction(
                                   icon: Icons.menu_book_rounded,
                                   label: 'Daftar Buku',
-                                  color: const Color(0xFF2196F3),
+                                  gradientColors: const [
+                                    Color(0xFF1976D2),
+                                    Color(0xFF42A5F5),
+                                  ],
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -852,7 +904,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _QuickAction(
                                   icon: Icons.add_circle_rounded,
                                   label: 'Tambah Buku',
-                                  color: const Color(0xFF4CAF50),
+                                  gradientColors: const [
+                                    Color(0xFF2E7D32),
+                                    Color(0xFF66BB6A),
+                                  ],
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -866,7 +921,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _QuickAction(
                                   icon: Icons.book_online_rounded,
                                   label: 'Peminjaman',
-                                  color: const Color(0xFFFF9800),
+                                  gradientColors: const [
+                                    Color(0xFFE65100),
+                                    Color(0xFFFFA726),
+                                  ],
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -879,9 +937,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   },
                                 ),
                                 _QuickAction(
-                                  icon: Icons.assignment_return,
+                                  icon: Icons.assignment_return_rounded,
                                   label: 'Pengembalian',
-                                  color: const Color(0xFF3F51B5),
+                                  gradientColors: const [
+                                    Color(0xFF283593),
+                                    Color(0xFF5C6BC0),
+                                  ],
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -898,8 +959,43 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-                      // ARS Notification Widget - Menampilkan notifikasi stok rendah
+
+                      // ARS Section Header
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 4,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFFE65100),
+                                    Color(0xFFFFA726),
+                                  ],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                ),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Text(
+                              'Notifikasi Stok',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1A237E),
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // ARS Notification Widget
                       const ArsNotificationListWidget(maxItems: 5),
+                      const SizedBox(height: 24),
                     ],
                   ),
                 )
@@ -933,29 +1029,35 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          DropdownButton<String>(
-                            value:
-                                _categories.contains(_selectedCategory)
-                                    ? _selectedCategory
-                                    : (_categories.isNotEmpty
-                                        ? _categories.first
-                                        : null),
-                            items:
-                                _categories
-                                    .map(
-                                      (c) => DropdownMenuItem(
-                                        value: c,
-                                        child: Text(c),
-                                      ),
-                                    )
-                                    .toList(),
-                            onChanged: (val) {
-                              if (val == null) return;
-                              setState(() {
-                                _selectedCategory = val;
-                              });
-                              _filterBuku();
-                            },
+                          Flexible(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value:
+                                  _categories.contains(_selectedCategory)
+                                      ? _selectedCategory
+                                      : (_categories.isNotEmpty
+                                          ? _categories.first
+                                          : null),
+                              items:
+                                  _categories
+                                      .map(
+                                        (c) => DropdownMenuItem(
+                                          value: c,
+                                          child: Text(
+                                            c,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged: (val) {
+                                if (val == null) return;
+                                setState(() {
+                                  _selectedCategory = val;
+                                });
+                                _filterBuku();
+                              },
+                            ),
                           ),
                         ],
                       ),
@@ -994,21 +1096,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
         floatingActionButton:
             isAdmin
-                ? FloatingActionButton(
-                  onPressed: () async {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const TambahBukuScreen(),
+                ? Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0D47A1), Color(0xFF1976D2)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0D47A1).withOpacity(0.4),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
-                    );
-                    if (result == true) {
-                      _loadBuku();
-                    }
-                  },
-                  tooltip: 'Tambah Buku',
-                  backgroundColor: const Color(0xFF3498DB),
-                  child: const Icon(Icons.add, color: Colors.white),
+                    ],
+                  ),
+                  child: FloatingActionButton(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const TambahBukuScreen(),
+                        ),
+                      );
+                      if (result == true) {
+                        _loadBuku();
+                      }
+                    },
+                    tooltip: 'Tambah Buku',
+                    elevation: 0,
+                    backgroundColor: Colors.transparent,
+                    child: const Icon(Icons.add, color: Colors.white, size: 28),
+                  ),
                 )
                 : null,
       ),
@@ -1019,59 +1139,167 @@ class _HomeScreenState extends State<HomeScreen> {
 class _QuickAction extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color color;
+  final List<Color> gradientColors;
   final VoidCallback onTap;
   const _QuickAction({
     required this.icon,
     required this.label,
-    required this.color,
+    required this.gradientColors,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        width: (MediaQuery.of(context).size.width - 56) / 2,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.2),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-          border: Border.all(color: color.withOpacity(0.3), width: 1),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                shape: BoxShape.circle,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: gradientColors.first.withOpacity(0.18),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
               ),
-              child: Icon(icon, color: color, size: 32),
+            ],
+          ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: gradientColors,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: gradientColors.first.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 26),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[800],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Drawer section header
+class _DrawerSectionHeader extends StatelessWidget {
+  final String title;
+  const _DrawerSectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Colors.grey[500],
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+/// Styled drawer menu item
+class _DrawerMenuItem extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final Color? titleColor;
+  final String? subtitle;
+  final String? badge;
+  final VoidCallback onTap;
+
+  const _DrawerMenuItem({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.onTap,
+    this.titleColor,
+    this.subtitle,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: iconColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: iconColor, size: 22),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+          color: titleColor ?? Colors.grey[800],
+        ),
+      ),
+      subtitle:
+          subtitle != null
+              ? Text(
+                subtitle!,
+                style: TextStyle(color: iconColor, fontSize: 12),
+              )
+              : null,
+      trailing:
+          badge != null
+              ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  badge!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              )
+              : null,
+      onTap: onTap,
     );
   }
 }

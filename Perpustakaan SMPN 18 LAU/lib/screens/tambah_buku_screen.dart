@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -467,6 +468,53 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
   Future<void> _saveBuku() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Cek duplikat buku berdasarkan judul atau ISBN
+    final judulInput = _judulController.text.trim().toLowerCase();
+    final isbnInput = _isbnController.text.trim();
+
+    final existingByJudul =
+        await FirebaseFirestore.instance
+            .collection('books')
+            .where('judul_lower', isEqualTo: judulInput)
+            .limit(1)
+            .get();
+
+    if (existingByJudul.docs.isNotEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Buku dengan judul "${_judulController.text}" sudah ada di perpustakaan.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // ISBN wajib diisi — cek duplikat
+    final existingByIsbn =
+        await FirebaseFirestore.instance
+            .collection('books')
+            .where('isbn', isEqualTo: isbnInput)
+            .limit(1)
+            .get();
+
+    if (existingByIsbn.docs.isNotEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Buku dengan ISBN "$isbnInput" sudah ada di perpustakaan.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     // 1. Loading dulu saat proses upload dan simpan data
     String? judulBuku;
     await runWithLoading(context, () async {
@@ -483,7 +531,7 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
             _deskripsiController.text.isEmpty
                 ? null
                 : _deskripsiController.text,
-        isbn: _isbnController.text.isEmpty ? null : _isbnController.text,
+        isbn: _isbnController.text.trim(),
         coverUrl: coverUrl,
         coverPublicId: coverPublicId,
         totalPeminjaman: 0,
@@ -948,10 +996,24 @@ class _TambahBukuScreenState extends State<TambahBukuScreen> {
               TextFormField(
                 controller: _isbnController,
                 decoration: const InputDecoration(
-                  labelText: 'ISBN (opsional)',
+                  labelText: 'ISBN',
+                  hintText: 'Contoh: 978-3-16-148410-0',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.text,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'ISBN wajib diisi';
+                  }
+                  final cleaned = value.replaceAll(RegExp(r'[\s-]'), '');
+                  if (cleaned.length != 10 && cleaned.length != 13) {
+                    return 'ISBN harus 10 atau 13 digit (tanpa tanda hubung)';
+                  }
+                  if (!RegExp(r'^[0-9Xx]+$').hasMatch(cleaned)) {
+                    return 'ISBN hanya boleh berisi angka (dan X untuk ISBN-10)';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(

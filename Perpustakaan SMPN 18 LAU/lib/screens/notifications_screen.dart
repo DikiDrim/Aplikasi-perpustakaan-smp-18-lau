@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -634,20 +636,26 @@ class _CountdownTimer extends StatefulWidget {
 class _CountdownTimerState extends State<_CountdownTimer> {
   late String _countdownText;
   late Color _countdownColor;
+  late final _timer = _createTimer();
+
+  Timer _createTimer() {
+    return Timer.periodic(const Duration(seconds: 60), (_) {
+      if (mounted) {
+        setState(() => _updateCountdown());
+      }
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _updateCountdown();
-    // Update setiap 60 detik
-    Future.delayed(const Duration(seconds: 1), _scheduleUpdate);
   }
 
-  void _scheduleUpdate() {
-    if (mounted) {
-      setState(() => _updateCountdown());
-      Future.delayed(const Duration(seconds: 60), _scheduleUpdate);
-    }
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
   }
 
   void _updateCountdown() {

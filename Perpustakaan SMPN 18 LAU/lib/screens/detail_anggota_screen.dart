@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -60,77 +61,309 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
     setState(() => _isPrinting = true);
 
     try {
-      // Initialize date formatting untuk PDF
       await initializeDateFormatting('id_ID', null);
 
       final pdf = pw.Document();
+      final primaryColor = PdfColor.fromHex('#0D47A1');
+      final lightBlue = PdfColor.fromHex('#E3F2FD');
+      final now = DateTime.now();
+      final formattedDate = DateFormat('dd MMMM yyyy', 'id_ID').format(now);
+      final formattedTime = DateFormat('HH:mm').format(now);
+
+      // Try to load school logo
+      pw.MemoryImage? logoImage;
+      try {
+        final logoData = await rootBundle.load(
+          'assets/images/perpustakaan1.jpeg',
+        );
+        logoImage = pw.MemoryImage(logoData.buffer.asUint8List());
+      } catch (_) {}
+
+      // Get peminjaman stats for this student
+      int totalPinjaman = 0;
+      int pinjamanAktif = 0;
+      int dikembalikan = 0;
+      try {
+        final uid = widget.siswa['uid'] ?? '';
+        if (uid.toString().isNotEmpty) {
+          final peminjamanSnap =
+              await FirebaseFirestore.instance
+                  .collection('peminjaman')
+                  .where('uid_siswa', isEqualTo: uid)
+                  .get();
+          for (final doc in peminjamanSnap.docs) {
+            final status =
+                (doc.data()['status'] ?? '').toString().toLowerCase();
+            totalPinjaman++;
+            if (status == 'dipinjam') pinjamanAktif++;
+            if (status == 'dikembalikan') dikembalikan++;
+          }
+        }
+      } catch (_) {}
 
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
           build: (pw.Context context) {
-            return pw.Padding(
-              padding: const pw.EdgeInsets.all(40),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  // Header
-                  pw.Center(
-                    child: pw.Column(
-                      children: [
-                        pw.Text(
-                          'PERPUSTAKAAN SMPN 18 LAU',
-                          style: pw.TextStyle(
-                            fontSize: 20,
-                            fontWeight: pw.FontWeight.bold,
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                // === HEADER ===
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(16),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: primaryColor, width: 2),
+                    borderRadius: pw.BorderRadius.circular(8),
+                  ),
+                  child: pw.Row(
+                    children: [
+                      if (logoImage != null)
+                        pw.Container(
+                          width: 60,
+                          height: 60,
+                          child: pw.Image(logoImage, fit: pw.BoxFit.cover),
+                        ),
+                      if (logoImage != null) pw.SizedBox(width: 16),
+                      pw.Expanded(
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.center,
+                          children: [
+                            pw.Text(
+                              'PERPUSTAKAAN SMPN 18 LAU',
+                              style: pw.TextStyle(
+                                fontSize: 18,
+                                fontWeight: pw.FontWeight.bold,
+                                color: primaryColor,
+                              ),
+                            ),
+                            pw.SizedBox(height: 4),
+                            pw.Text(
+                              'KARTU DATA ANGGOTA PERPUSTAKAAN',
+                              style: pw.TextStyle(
+                                fontSize: 13,
+                                fontWeight: pw.FontWeight.bold,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                            pw.SizedBox(height: 4),
+                            pw.Container(
+                              height: 2,
+                              width: 200,
+                              color: primaryColor,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 24),
+
+                // === DATA ANGGOTA TABLE ===
+                pw.Container(
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.grey400),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
+                  child: pw.Column(
+                    children: [
+                      // Table header
+                      pw.Container(
+                        width: double.infinity,
+                        padding: const pw.EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 16,
+                        ),
+                        decoration: pw.BoxDecoration(
+                          color: primaryColor,
+                          borderRadius: const pw.BorderRadius.only(
+                            topLeft: pw.Radius.circular(3),
+                            topRight: pw.Radius.circular(3),
                           ),
                         ),
-                        pw.SizedBox(height: 8),
-                        pw.Text(
-                          'Data Anggota Perpustakaan',
+                        child: pw.Text(
+                          'DATA PRIBADI ANGGOTA',
                           style: pw.TextStyle(
-                            fontSize: 16,
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.white,
+                          ),
+                        ),
+                      ),
+                      _buildPdfTableRow(
+                        'Nama Lengkap',
+                        widget.siswa['nama'] ?? '-',
+                        false,
+                      ),
+                      _buildPdfTableRow(
+                        'NIS',
+                        widget.siswa['nis'] ?? '-',
+                        true,
+                      ),
+                      _buildPdfTableRow(
+                        'Kelas',
+                        (widget.siswa['kelas'] != null &&
+                                widget.siswa['kelas'].toString().isNotEmpty)
+                            ? widget.siswa['kelas']
+                            : '-',
+                        false,
+                      ),
+                      _buildPdfTableRow(
+                        'Username',
+                        widget.siswa['username'] ?? '-',
+                        true,
+                      ),
+                      _buildPdfTableRow(
+                        'Tanggal Terdaftar',
+                        _formatDateForPDF(widget.siswa['created_at']),
+                        false,
+                      ),
+                      _buildPdfTableRow('Status', 'Anggota Aktif', true),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+
+                // === STATISTIK PEMINJAMAN ===
+                pw.Container(
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.grey400),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
+                  child: pw.Column(
+                    children: [
+                      pw.Container(
+                        width: double.infinity,
+                        padding: const pw.EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 16,
+                        ),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColor.fromHex('#388E3C'),
+                          borderRadius: const pw.BorderRadius.only(
+                            topLeft: pw.Radius.circular(3),
+                            topRight: pw.Radius.circular(3),
+                          ),
+                        ),
+                        child: pw.Text(
+                          'STATISTIK PEMINJAMAN',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.white,
+                          ),
+                        ),
+                      ),
+                      _buildPdfTableRow(
+                        'Total Peminjaman',
+                        '$totalPinjaman buku',
+                        false,
+                      ),
+                      _buildPdfTableRow(
+                        'Sedang Dipinjam',
+                        '$pinjamanAktif buku',
+                        true,
+                      ),
+                      _buildPdfTableRow(
+                        'Sudah Dikembalikan',
+                        '$dikembalikan buku',
+                        false,
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 24),
+
+                // === CATATAN ===
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.all(12),
+                  decoration: pw.BoxDecoration(
+                    color: lightBlue,
+                    borderRadius: pw.BorderRadius.circular(6),
+                    border: pw.Border.all(color: PdfColor.fromHex('#90CAF9')),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Catatan:',
+                        style: pw.TextStyle(
+                          fontSize: 10,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        '• Kartu ini merupakan bukti keanggotaan perpustakaan SMPN 18 LAU.',
+                        style: const pw.TextStyle(fontSize: 9),
+                      ),
+                      pw.Text(
+                        '• Kartu ini bersifat pribadi dan tidak dapat dipindahtangankan.',
+                        style: const pw.TextStyle(fontSize: 9),
+                      ),
+                      pw.Text(
+                        '• Data statistik peminjaman diambil berdasarkan data terkini.',
+                        style: const pw.TextStyle(fontSize: 9),
+                      ),
+                    ],
+                  ),
+                ),
+
+                pw.Spacer(),
+
+                // === FOOTER: TTD + Tanggal ===
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Dicetak pada:',
+                          style: const pw.TextStyle(
+                            fontSize: 9,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                        pw.Text(
+                          '$formattedDate, $formattedTime WIB',
+                          style: pw.TextStyle(
+                            fontSize: 9,
                             fontWeight: pw.FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  pw.SizedBox(height: 30),
-                  pw.Divider(),
-                  pw.SizedBox(height: 20),
-                  // Data Siswa
-                  _buildInfoRow('Nama Lengkap', widget.siswa['nama'] ?? '-'),
-                  pw.SizedBox(height: 12),
-                  _buildInfoRow('NIS', widget.siswa['nis'] ?? '-'),
-                  pw.SizedBox(height: 12),
-                  _buildInfoRow(
-                    'Kelas',
-                    (widget.siswa['kelas'] != null &&
-                            widget.siswa['kelas'].toString().isNotEmpty)
-                        ? widget.siswa['kelas']
-                        : '-',
-                  ),
-                  pw.SizedBox(height: 12),
-                  _buildInfoRow('Username', widget.siswa['username'] ?? '-'),
-                  pw.SizedBox(height: 12),
-                  _buildInfoRow(
-                    'Tanggal Terdaftar',
-                    _formatDateForPDF(widget.siswa['created_at']),
-                  ),
-                  pw.SizedBox(height: 30),
-                  pw.Divider(),
-                  pw.SizedBox(height: 20),
-                  // Footer
-                  pw.Align(
-                    alignment: pw.Alignment.centerRight,
-                    child: pw.Text(
-                      'Dicetak pada: ${DateFormat('dd/MM/yyyy HH:mm', 'id_ID').format(DateTime.now())}',
-                      style: const pw.TextStyle(fontSize: 10),
+                    pw.Column(
+                      children: [
+                        pw.Text(
+                          'Mengetahui,',
+                          style: const pw.TextStyle(fontSize: 10),
+                        ),
+                        pw.Text(
+                          'Petugas Perpustakaan',
+                          style: const pw.TextStyle(fontSize: 10),
+                        ),
+                        pw.SizedBox(height: 50),
+                        pw.Container(
+                          width: 150,
+                          decoration: const pw.BoxDecoration(
+                            border: pw.Border(bottom: pw.BorderSide(width: 1)),
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          'NIP. .............................',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             );
           },
         ),
@@ -164,19 +397,37 @@ class _DetailAnggotaScreenState extends State<DetailAnggotaScreen> {
     }
   }
 
-  pw.Widget _buildInfoRow(String label, String value) {
-    return pw.Row(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.SizedBox(
-          width: 120,
-          child: pw.Text(
-            '$label:',
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-          ),
+  pw.Widget _buildPdfTableRow(String label, String value, bool isShaded) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: pw.BoxDecoration(
+        color: isShaded ? PdfColor.fromHex('#F5F5F5') : null,
+        border: const pw.Border(
+          bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
         ),
-        pw.Expanded(child: pw.Text(value)),
-      ],
+      ),
+      child: pw.Row(
+        children: [
+          pw.SizedBox(
+            width: 160,
+            child: pw.Text(
+              label,
+              style: pw.TextStyle(
+                fontSize: 11,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.grey800,
+              ),
+            ),
+          ),
+          pw.Text(
+            ': ',
+            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Expanded(
+            child: pw.Text(value, style: const pw.TextStyle(fontSize: 11)),
+          ),
+        ],
+      ),
     );
   }
 

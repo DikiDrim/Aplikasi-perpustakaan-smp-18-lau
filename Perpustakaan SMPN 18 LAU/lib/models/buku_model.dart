@@ -9,7 +9,7 @@ class BukuModel {
   final int? stokAwal; // target stok awal saat reset
   final String kategori;
   final int tahun;
-  final String? isbn; // ISBN buku
+  final String isbn; // ISBN buku (wajib diisi, unik)
   final String? coverUrl; // url gambar sampul
   final String? coverPublicId; // cloudinary public id
   final String? bookFileUrl; // url file buku digital (PDF/EPUB) di Cloudinary
@@ -57,7 +57,7 @@ class BukuModel {
     this.stokAwal,
     required this.kategori,
     required this.tahun,
-    this.isbn,
+    required this.isbn,
     this.coverUrl,
     this.coverPublicId,
     this.bookFileUrl,
@@ -83,7 +83,7 @@ class BukuModel {
       stokAwal: map['stok_awal'],
       kategori: map['kategori'] ?? '',
       tahun: map['tahun'] ?? 0,
-      isbn: map['isbn'],
+      isbn: map['isbn'] ?? '',
       coverUrl: map['cover_url'],
       coverPublicId: map['cover_public_id'],
       bookFileUrl: map['book_file_url'],

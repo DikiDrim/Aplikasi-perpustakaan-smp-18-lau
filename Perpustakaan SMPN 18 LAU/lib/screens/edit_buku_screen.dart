@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/clodinary_service.dart';
@@ -254,6 +255,33 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
   Future<void> _updateBuku() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Cek duplikat ISBN (kecuali buku ini sendiri)
+    final isbnInput = _isbnController.text.trim();
+    final existingByIsbn =
+        await FirebaseFirestore.instance
+            .collection('books')
+            .where('isbn', isEqualTo: isbnInput)
+            .limit(2)
+            .get();
+
+    final isDuplicate = existingByIsbn.docs.any(
+      (doc) => doc.id != widget.buku.id,
+    );
+
+    if (isDuplicate) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Buku dengan ISBN "$isbnInput" sudah ada di perpustakaan.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     await runWithLoading(context, () async {
       // Upload cover baru jika ada
       String? coverUrl = _currentCoverUrl;
@@ -299,7 +327,7 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
             _deskripsiController.text.isEmpty
                 ? null
                 : _deskripsiController.text,
-        isbn: _isbnController.text.isEmpty ? null : _isbnController.text,
+        isbn: _isbnController.text.trim(),
         coverUrl: coverUrl,
         coverPublicId: coverPublicId,
         totalPeminjaman: widget.buku.totalPeminjaman,
@@ -874,10 +902,24 @@ class _EditBukuScreenState extends State<EditBukuScreen> {
               TextFormField(
                 controller: _isbnController,
                 decoration: const InputDecoration(
-                  labelText: 'ISBN (opsional)',
+                  labelText: 'ISBN',
+                  hintText: 'Contoh: 978-3-16-148410-0',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.text,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'ISBN wajib diisi';
+                  }
+                  final cleaned = value.replaceAll(RegExp(r'[\s-]'), '');
+                  if (cleaned.length != 10 && cleaned.length != 13) {
+                    return 'ISBN harus 10 atau 13 digit (tanpa tanda hubung)';
+                  }
+                  if (!RegExp(r'^[0-9Xx]+$').hasMatch(cleaned)) {
+                    return 'ISBN hanya boleh berisi angka (dan X untuk ISBN-10)';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(

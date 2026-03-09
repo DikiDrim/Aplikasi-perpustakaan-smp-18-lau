@@ -78,33 +78,18 @@ class FirestoreService {
       final data = Map<String, dynamic>.from(buku.toMap());
       // Ensure ARS is enabled by default for newly added books
       data['is_ars_enabled'] = true;
+      // Store lowercase title for duplicate check
+      data['judul_lower'] = (buku.judul).toLowerCase();
       final docRef = await _firestore.collection(_collection).add(data);
       return docRef.id;
     } catch (e, st) {
-      // Print for debugging in console and include a readable message
-      print('approvePeminjaman error (raw): $e');
+      print('addBuku error (raw): $e');
       print(st);
-
-      // Try to extract wrapped error/stack if present (some Firebase errors are boxed)
-      String extracted = '';
-      try {
-        final dyn = e as dynamic;
-        if (dyn.error != null) {
-          extracted += 'boxed_error: ${dyn.error}\n';
-        }
-        if (dyn.stack != null) {
-          extracted += 'boxed_stack: ${dyn.stack}\n';
-        }
-      } catch (_) {
-        // ignore
-      }
 
       String msg;
       try {
         if (e is FirebaseException) {
           msg = '${e.code}: ${e.message}';
-        } else if (extracted.isNotEmpty) {
-          msg = '${e.toString()}\n$extracted';
         } else {
           msg = e.toString();
         }
@@ -112,7 +97,7 @@ class FirestoreService {
         msg = e.toString();
       }
 
-      throw Exception('Gagal menyetujui peminjaman: $msg');
+      throw Exception('Gagal menambahkan buku: $msg');
     }
   }
 
@@ -358,11 +343,7 @@ class FirestoreService {
 
     final data = bukuSnap.data();
     final statusKondisi = data?['status_kondisi'] ?? 'Tersedia';
-    if (statusKondisi == 'Rusak') {
-      throw Exception(
-        'Buku ini tidak dapat dipinjam karena dalam kondisi RUSAK',
-      );
-    }
+    // Hanya blok jika SEMUA eksemplar hilang (admin override)
     if (statusKondisi == 'Hilang') {
       throw Exception('Buku ini tidak dapat dipinjam karena berstatus HILANG');
     }
@@ -376,26 +357,61 @@ class FirestoreService {
   Future<bool> addPeminjaman(PeminjamanModel peminjaman) async {
     try {
       await _assertStokCukup(peminjaman);
-      await _firestore
-          .collection(_peminjamanCollection)
-          .add(peminjaman.toMap());
 
-      // Update stok buku dan dapatkan stok baru setelah dikurangi
-      final newStok = await updateStokBuku(
-        peminjaman.bukuId,
-        -peminjaman.jumlah,
-      );
+      // Gunakan transaksi untuk membuat peminjaman + kurangi stok secara atomik
+      int newStok = 0;
+      await _firestore.runTransaction((tx) async {
+        final bukuRef = _firestore
+            .collection(_collection)
+            .doc(peminjaman.bukuId);
+        final bukuSnap = await tx.get(bukuRef);
+        if (!bukuSnap.exists) throw Exception('Buku tidak ditemukan');
+
+        final bukuData = bukuSnap.data() as Map<String, dynamic>;
+        final currentStok = (bukuData['stok'] ?? 0) as int;
+        if (currentStok < peminjaman.jumlah) {
+          throw Exception('Stok tidak cukup. Sisa stok: $currentStok');
+        }
+
+        final currentTotal = (bukuData['total_peminjaman'] ?? 0) as int;
+        newStok = (currentStok - peminjaman.jumlah).clamp(0, 999);
+
+        // Hitung stok_status
+        final stokMinimum = (bukuData['stok_minimum'] ?? 0) as int;
+        final stokAwalVal = bukuData['stok_awal'] as int?;
+        final stokMaksimal = stokAwalVal ?? (stokMinimum + 10);
+        String stokStatus;
+        if (newStok <= stokMinimum) {
+          stokStatus = 'Kritis';
+        } else if (newStok >= stokMaksimal) {
+          stokStatus = 'Maksimal';
+        } else {
+          stokStatus = 'Aman';
+        }
+        final rekomendasi =
+            (stokMaksimal - newStok) > 0 ? (stokMaksimal - newStok) : 0;
+
+        // Update stok, total_peminjaman dkk secara atomik
+        tx.update(bukuRef, {
+          'stok': newStok,
+          'total_peminjaman': currentTotal + peminjaman.jumlah,
+          'stok_status': stokStatus,
+          'rekomendasi_restock': rekomendasi,
+          'last_stock_update': FieldValue.serverTimestamp(),
+        });
+
+        // Set peminjaman doc inside transaction
+        final peminjamanRef =
+            _firestore.collection(_peminjamanCollection).doc();
+        tx.set(peminjamanRef, peminjaman.toMap());
+      });
+
       print(
         '[addPeminjaman] bukuId=${peminjaman.bukuId}, jumlah=${peminjaman.jumlah}, newStok=$newStok',
       );
 
-      // Update total peminjaman buku
-      await updateTotalPeminjaman(peminjaman.bukuId, peminjaman.jumlah);
-
-      // ARS check: CEK DULU sebelum auto-restock!
-      // Gunakan stok AKTUAL yang baru saja dihitung (bukan baca ulang dari DB)
+      // ARS check
       try {
-        print('[addPeminjaman] Memulai ARS check...');
         final arsService = ArsService();
         await arsService.checkArsOnTransaction(
           bukuId: peminjaman.bukuId,
@@ -403,11 +419,10 @@ class FirestoreService {
           jumlahDipinjam: peminjaman.jumlah,
         );
       } catch (e) {
-        // Log error tapi jangan blokir alur peminjaman
         print('[ARS ERROR in addPeminjaman] $e');
       }
 
-      // ARS: cek stok dan lakukan restok otomatis jika perlu
+      // Auto-restock jika perlu
       final didRestock = await _autoRestockIfNeeded(peminjaman.bukuId);
       return didRestock;
     } on Exception {
@@ -422,6 +437,8 @@ class FirestoreService {
   /// Booking tidak mengubah stok sampai admin menyetujui.
   Future<void> addBooking(PeminjamanModel peminjaman) async {
     try {
+      // Validasi stok sebelum booking
+      await _assertStokCukup(peminjaman);
       final data = peminjaman.toMap();
       // Simpan additional metadata
       data['status'] = 'pending';
@@ -435,25 +452,27 @@ class FirestoreService {
   /// Approve / setujui peminjaman yang berstatus 'pending'.
   /// Only admin can call this.
   Future<void> approvePeminjaman(String peminjamanId) async {
-    await _checkAdminPermission();
-    final docRef = _firestore
-        .collection(_peminjamanCollection)
-        .doc(peminjamanId);
     try {
-      final snap = await docRef.get();
-      if (!snap.exists) throw Exception('Peminjaman tidak ditemukan');
-      final data = snap.data() as Map<String, dynamic>;
-      final status = (data['status'] ?? 'pending') as String;
-      if (status != 'pending')
+      await _checkAdminPermission();
+      final docRef = _firestore
+          .collection(_peminjamanCollection)
+          .doc(peminjamanId);
+      // Pre-read outside transaction to get bukuId and uid_siswa for post-transaction use
+      final preSnap = await docRef.get();
+      if (!preSnap.exists) throw Exception('Peminjaman tidak ditemukan');
+      final preData = preSnap.data() as Map<String, dynamic>;
+      final preStatus = (preData['status'] ?? 'pending') as String;
+      if (preStatus != 'pending')
         throw Exception('Peminjaman bukan dalam status pending');
 
-      final bukuId = data['buku_id'] as String?;
-      final jumlah = (data['jumlah'] ?? 1) as int;
+      final bukuId = preData['buku_id'] as String?;
+      final jumlah = (preData['jumlah'] ?? 1) as int;
 
       if (bukuId == null || bukuId.isEmpty)
         throw Exception('Data buku tidak valid');
 
       // Lakukan transaksi untuk memastikan stok dan update atomik
+      // IMPORTANT: Only read each doc ONCE inside the transaction (Web compatibility)
       int newStokAfterApproval = 0;
       await _firestore.runTransaction((tx) async {
         final bukuRef = _firestore.collection(_collection).doc(bukuId);
@@ -469,20 +488,33 @@ class FirestoreService {
         final newStok = (currentStok - jumlah).clamp(0, 999);
         newStokAfterApproval = newStok;
 
+        // Hitung stok_status dan rekomendasi_restock agar dashboard konsisten
+        final stokMinimum = (bukuData['stok_minimum'] ?? 0) as int;
+        final stokAwalVal = bukuData['stok_awal'] as int?;
+        final stokMaksimal = stokAwalVal ?? (stokMinimum + 10);
+
+        String stokStatus;
+        if (newStok <= stokMinimum) {
+          stokStatus = 'Kritis';
+        } else if (newStok >= stokMaksimal) {
+          stokStatus = 'Maksimal';
+        } else {
+          stokStatus = 'Aman';
+        }
+        final rekomendasi =
+            (stokMaksimal - newStok) > 0 ? (stokMaksimal - newStok) : 0;
+
         tx.update(bukuRef, {
           'stok': newStok,
           'total_peminjaman': currentTotal + jumlah,
+          'stok_status': stokStatus,
+          'rekomendasi_restock': rekomendasi,
           'last_stock_update': FieldValue.serverTimestamp(),
         });
 
-        // Update dokumen peminjaman: status -> dipinjam, set tanggal_pinjam/jatuh_tempo jika belum ada
-        final pemSnap = await tx.get(docRef);
-        final pemData = pemSnap.data() as Map<String, dynamic>;
-        final now = FieldValue.serverTimestamp();
-
-        // Safely parse existing tanggal_jatuh_tempo (could be Timestamp, String, or DateTime)
+        // Safely parse existing tanggal_jatuh_tempo from pre-read data
         Timestamp dueTimestamp;
-        final rawDue = pemData['tanggal_jatuh_tempo'];
+        final rawDue = preData['tanggal_jatuh_tempo'];
         if (rawDue is Timestamp) {
           dueTimestamp = rawDue;
         } else if (rawDue is DateTime) {
@@ -502,9 +534,10 @@ class FirestoreService {
           );
         }
 
+        // Update peminjaman status without re-reading the doc inside transaction
         tx.update(docRef, {
           'status': 'dipinjam',
-          'tanggal_pinjam': now,
+          'tanggal_pinjam': FieldValue.serverTimestamp(),
           'tanggal_jatuh_tempo': dueTimestamp,
         });
       });
@@ -528,9 +561,9 @@ class FirestoreService {
 
       // Kirim notifikasi ke siswa jika ada UID
       try {
-        final uid = data['uid_siswa'] as String?;
-        final judul = data['judul_buku'] as String? ?? '';
-        final tanggalJt = data['tanggal_jatuh_tempo'];
+        final uid = preData['uid_siswa'] as String?;
+        final judul = preData['judul_buku'] as String? ?? '';
+        final tanggalJt = preData['tanggal_jatuh_tempo'];
         if (uid != null && uid.isNotEmpty) {
           final appNotificationService = AppNotificationService();
           await appNotificationService.createNotification(
@@ -608,7 +641,26 @@ class FirestoreService {
           }
           if (increaseBy > 0) {
             final newStok = (currentStok + increaseBy).clamp(0, 999);
-            tx.update(docRef, {'stok': newStok});
+            final stokMaksimal = stokAwal ?? (stokMinimum + 10);
+
+            // Hitung stok_status dan rekomendasi_restock
+            String stokStatus;
+            if (newStok <= stokMinimum) {
+              stokStatus = 'Kritis';
+            } else if (newStok >= stokMaksimal) {
+              stokStatus = 'Maksimal';
+            } else {
+              stokStatus = 'Aman';
+            }
+            final rekomendasi =
+                (stokMaksimal - newStok) > 0 ? (stokMaksimal - newStok) : 0;
+
+            tx.update(docRef, {
+              'stok': newStok,
+              'stok_status': stokStatus,
+              'rekomendasi_restock': rekomendasi,
+              'last_stock_update': FieldValue.serverTimestamp(),
+            });
             restocked = true;
           }
         }
@@ -2119,9 +2171,9 @@ class FirestoreService {
           final bukuData = bukuDoc.data() as Map<String, dynamic>;
           final currentJumlahRusak = (bukuData['jumlah_rusak'] ?? 0) as int;
           final currentJumlahHilang = (bukuData['jumlah_hilang'] ?? 0) as int;
+          final currentStok = (bukuData['stok'] ?? 0) as int;
 
           final updateBukuData = <String, dynamic>{
-            'status_kondisi': kondisiBuku,
             'catatan_kondisi':
                 'Dilaporkan $kondisiBuku saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}',
             'tanggal_status_kondisi': Timestamp.now(),
@@ -2131,6 +2183,11 @@ class FirestoreService {
             updateBukuData['jumlah_rusak'] = currentJumlahRusak + quantity;
           } else {
             updateBukuData['jumlah_hilang'] = currentJumlahHilang + quantity;
+          }
+
+          // PENTING: Hanya ubah status_kondisi jika stok sudah habis
+          if (currentStok <= 0) {
+            updateBukuData['status_kondisi'] = kondisiBuku;
           }
 
           await _firestore
@@ -2307,33 +2364,47 @@ class FirestoreService {
           final bukuData = bukuDoc.data() as Map<String, dynamic>;
           final currentJumlahRusak = (bukuData['jumlah_rusak'] ?? 0) as int;
           final currentJumlahHilang = (bukuData['jumlah_hilang'] ?? 0) as int;
+          final currentStok = (bukuData['stok'] ?? 0) as int;
 
           final updateBukuData = <String, dynamic>{
             'tanggal_status_kondisi': Timestamp.now(),
           };
 
+          final newJumlahRusak = currentJumlahRusak + jumlahRusak;
+          final newJumlahHilang = currentJumlahHilang + jumlahHilang;
+
           if (jumlahRusak > 0) {
-            updateBukuData['jumlah_rusak'] = currentJumlahRusak + jumlahRusak;
+            updateBukuData['jumlah_rusak'] = newJumlahRusak;
           }
           if (jumlahHilang > 0) {
-            updateBukuData['jumlah_hilang'] =
-                currentJumlahHilang + jumlahHilang;
+            updateBukuData['jumlah_hilang'] = newJumlahHilang;
           }
 
-          // Update status_kondisi based on what was reported
+          // Catatan kondisi (untuk log)
           if (jumlahHilang > 0 && jumlahRusak > 0) {
-            updateBukuData['status_kondisi'] = 'Rusak & Hilang';
             updateBukuData['catatan_kondisi'] =
                 'Dilaporkan $jumlahRusak rusak dan $jumlahHilang hilang saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}';
           } else if (jumlahHilang > 0) {
-            updateBukuData['status_kondisi'] = 'Hilang';
             updateBukuData['catatan_kondisi'] =
                 'Dilaporkan $jumlahHilang hilang saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}';
           } else {
-            updateBukuData['status_kondisi'] = 'Rusak';
             updateBukuData['catatan_kondisi'] =
                 'Dilaporkan $jumlahRusak rusak saat pengembalian oleh ${snap.data()?['nama_peminjam'] ?? 'Anggota'}';
           }
+
+          // PENTING: Hanya ubah status_kondisi jika SEMUA stok habis (tidak ada eksemplar yang bisa dipinjam)
+          // Jika masih ada stok tersedia, tetap 'Tersedia' agar buku masih bisa dipinjam siswa lain
+          if (currentStok <= 0) {
+            // Stok habis - tandai sesuai kondisi
+            if (newJumlahHilang > 0 && newJumlahRusak > 0) {
+              updateBukuData['status_kondisi'] = 'Rusak & Hilang';
+            } else if (newJumlahHilang > 0) {
+              updateBukuData['status_kondisi'] = 'Hilang';
+            } else {
+              updateBukuData['status_kondisi'] = 'Rusak';
+            }
+          }
+          // Jika masih ada stok, JANGAN ubah status_kondisi → tetap 'Tersedia'
 
           await _firestore
               .collection(_collection)

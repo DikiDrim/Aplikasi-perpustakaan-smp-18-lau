@@ -9,6 +9,7 @@ import '../models/peminjaman_model.dart';
 import '../configs/claudinary_api_config.dart';
 import '../providers/auth_provider.dart';
 import '../configs/feature_flags.dart';
+import '../widgets/success_popup.dart';
 import 'baca_buku_screen.dart';
 import 'edit_buku_screen.dart';
 import 'ubah_kondisi_buku_screen.dart';
@@ -86,7 +87,6 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
                 buku.effectiveJumlahRusak +
                 buku.effectiveJumlahHilang;
             final isIncrease = newStok > buku.stok;
-            final isDecrease = newStok < buku.stok;
 
             return AlertDialog(
               title: const Text('Atur Stok Buku'),
@@ -714,7 +714,7 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      // Booking Peminjaman (untuk siswa) - controlled by feature flag
+                      // Pinjam Buku (untuk siswa) - controlled by feature flag
                       if (!isAdmin && bookingEnabled)
                         SizedBox(
                           width: double.infinity,
@@ -724,7 +724,7 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
                                     ? () => _showBookingDialog(auth)
                                     : null,
                             icon: const Icon(Icons.event_available),
-                            label: const Text('Booking Peminjaman'),
+                            label: const Text('Pinjam Buku'),
                           ),
                         ),
                       const SizedBox(height: 16),
@@ -789,7 +789,7 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
           (_) => StatefulBuilder(
             builder: (context, setState) {
               return AlertDialog(
-                title: const Text('Booking Peminjaman'),
+                title: const Text('Pinjam Buku'),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -846,7 +846,7 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Booking'),
+                    child: const Text('Pinjam'),
                   ),
                 ],
               );
@@ -909,17 +909,18 @@ class _DetailBukuScreenState extends State<DetailBukuScreen> {
       );
       await _firestoreService.addBooking(peminjaman);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Booking berhasil, tunggu konfirmasi admin'),
-          ),
+        await SuccessPopup.show(
+          context,
+          title: 'Peminjaman Berhasil Diajukan!',
+          subtitle: 'Datang ke perpustakaan untuk konfirmasi oleh admin.',
         );
+        if (mounted) Navigator.pop(context);
       }
     } catch (e) {
       if (mounted)
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Gagal booking: $e')));
+        ).showSnackBar(SnackBar(content: Text('Gagal meminjam: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

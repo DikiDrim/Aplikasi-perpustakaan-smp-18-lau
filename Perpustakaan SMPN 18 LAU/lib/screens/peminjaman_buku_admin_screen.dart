@@ -7,9 +7,9 @@ import '../models/peminjaman_model.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import '../services/app_notification_service.dart';
-import '../utils/async_action.dart';
 import '../utils/throttle.dart';
 import '../configs/feature_flags.dart';
+import '../widgets/success_popup.dart';
 
 class PeminjamanBukuAdminScreen extends StatefulWidget {
   const PeminjamanBukuAdminScreen({super.key});
@@ -909,7 +909,7 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    'Siswa tidak ditemukan? Isi data manual di bawah ini',
+                                    'Siswa belum terdaftar? Isi data manual di bawah ini',
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: Colors.grey[800],
@@ -989,7 +989,7 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'NIS (Opsional)',
+                                      'NIS *',
                                       style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
@@ -1033,6 +1033,11 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                           Icons.badge,
                                           color: Color(0xFF0D47A1),
                                         ),
+                                        helperText: 'Wajib diisi',
+                                        helperStyle: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 11,
+                                        ),
                                       ),
                                       enabled: _selectedSiswaUid == null,
                                     ),
@@ -1045,7 +1050,7 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Kelas (Opsional)',
+                                      'Kelas *',
                                       style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
@@ -1106,6 +1111,11 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                                         prefixIcon: const Icon(
                                           Icons.class_,
                                           color: Color(0xFF0D47A1),
+                                        ),
+                                        helperText: 'Wajib diisi',
+                                        helperStyle: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 11,
                                         ),
                                         contentPadding:
                                             const EdgeInsets.symmetric(
@@ -1211,6 +1221,7 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                         SizedBox(height: 8),
                         DropdownButtonFormField<String>(
                           value: _unit,
+                          hint: const Text('Pilih satuan waktu peminjaman'),
                           items: const [
                             DropdownMenuItem(
                               value: 'hari',
@@ -1298,7 +1309,7 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                           decoration: InputDecoration(
                             hintText:
                                 _unit == null
-                                    ? 'Isi angka durasi'
+                                    ? 'Pilih satuan waktu dahulu'
                                     : (_unit == 'hari'
                                         ? 'Masukkan angka, contoh: 3'
                                         : 'Masukkan angka, contoh: 2'),
@@ -1531,73 +1542,267 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
                         .where((p) => p.status == 'pending')
                         .toList();
                 if (list.isEmpty) {
-                  return const Center(
-                    child: Text('Tidak ada permintaan peminjaman'),
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.inbox_rounded,
+                          size: 64,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Tidak ada permintaan peminjaman',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Permintaan booking dari siswa akan muncul di sini',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[400],
+                          ),
+                        ),
+                      ],
+                    ),
                   );
                 }
                 return ListView.separated(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   itemCount: list.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     final p = list[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text(p.judulBuku),
-                        subtitle: Text(
-                          '${p.namaPeminjam} • Jumlah: ${p.jumlah} buku',
-                        ),
-                        trailing: Wrap(
-                          spacing: 8,
-                          children: [
-                            TextButton(
-                              onPressed: () async {
-                                await runWithLoading(context, () async {
-                                  try {
-                                    await _firestoreService.approvePeminjaman(
-                                      p.id!,
-                                    );
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Peminjaman disetujui'),
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Gagal setujui: $e'),
-                                      ),
-                                    );
-                                  }
-                                });
-                              },
-                              child: const Text('Setujui'),
+                    final dueDate = p.tanggalJatuhTempo;
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          // Header with status badge
+                          Container(
+                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.05),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(16),
+                              ),
                             ),
-                            TextButton(
-                              onPressed: () async {
-                                await runWithLoading(context, () async {
-                                  try {
-                                    await _firestoreService.deletePeminjaman(
-                                      p.id!,
-                                    );
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Permintaan dibatalkan'),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.pending_actions_rounded,
+                                    color: Colors.orange,
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        p.judulBuku,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    );
-                                  } catch (e) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Gagal batalkan: $e'),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${p.jumlah} buku',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[500],
+                                        ),
                                       ),
-                                    );
-                                  }
-                                });
-                              },
-                              child: const Text('Tolak'),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Text(
+                                    'Menunggu',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.orange,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                          // Details section
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.person_outline,
+                                      size: 16,
+                                      color: Colors.grey[600],
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Peminjam: ',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        p.namaPeminjam,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (p.kelas != null && p.kelas!.isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.school_outlined,
+                                        size: 16,
+                                        color: Colors.grey[600],
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Kelas: ',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                      Text(
+                                        p.kelas!,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                if (dueDate != null) ...[
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today_outlined,
+                                        size: 16,
+                                        color: Colors.grey[600],
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Jatuh tempo: ',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                      Text(
+                                        '${dueDate.day.toString().padLeft(2, '0')}/${dueDate.month.toString().padLeft(2, '0')}/${dueDate.year}',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          // Action buttons
+                          Container(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _handleReject(p),
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Tolak'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.red,
+                                      side: const BorderSide(color: Colors.red),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _handleApprove(p),
+                                    icon: const Icon(
+                                      Icons.check_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Setujui'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF4CAF50),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                      ),
+                                      elevation: 2,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -1606,6 +1811,369 @@ class _PeminjamanBukuAdminScreenState extends State<PeminjamanBukuAdminScreen>
             ),
         ],
       ),
+    );
+  }
+
+  // ============================================================
+  // HANDLER: Tolak permintaan peminjaman
+  // ============================================================
+  Future<void> _handleReject(PeminjamanModel p) async {
+    // Simpan data yang dibutuhkan sebelum async gap
+    final pId = p.id;
+    if (pId == null) {
+      debugPrint('[REJECT] p.id is null, aborting');
+      return;
+    }
+
+    final alasanController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.cancel_rounded,
+                    color: Colors.red,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Tolak Permintaan?',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Yakin ingin menolak permintaan peminjaman "${p.judulBuku}" dari ${p.namaPeminjam}?',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: alasanController,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    labelText: 'Alasan penolakan (opsional)',
+                    hintText: 'Misal: Stok habis, buku sedang diperbaiki...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Batal'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text('Ya, Tolak'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    final alasan = alasanController.text.trim();
+
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Update status to 'ditolak'
+      final updateData = <String, dynamic>{
+        'status': 'ditolak',
+        'ditolak_pada': FieldValue.serverTimestamp(),
+      };
+      if (alasan.isNotEmpty) {
+        updateData['alasan_ditolak'] = alasan;
+      }
+      await FirebaseFirestore.instance
+          .collection('peminjaman')
+          .doc(pId)
+          .update(updateData);
+
+      debugPrint('[REJECT] Berhasil menolak peminjaman $pId');
+
+      // Notify student
+      try {
+        final uidSiswa = p.uidSiswa;
+        if (uidSiswa != null && uidSiswa.isNotEmpty) {
+          final bodyText =
+              alasan.isNotEmpty
+                  ? 'Permintaan peminjaman "${p.judulBuku}" ditolak. Alasan: $alasan'
+                  : 'Permintaan peminjaman "${p.judulBuku}" telah ditolak oleh admin.';
+          await _appNotificationService.createNotification(
+            userId: uidSiswa,
+            title: 'Peminjaman Ditolak',
+            body: bodyText,
+            type: 'peminjaman_reject',
+            data: {'peminjaman_id': pId},
+          );
+        }
+      } catch (_) {}
+
+      // Close loading
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+
+      // Show reject success popup
+      if (mounted) {
+        await showDialog(
+          context: context,
+          barrierDismissible: true,
+          builder:
+              (ctx) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.red.withOpacity(0.1),
+                      ),
+                      child: const Icon(
+                        Icons.cancel_rounded,
+                        color: Colors.red,
+                        size: 50,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Permintaan Ditolak',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Permintaan peminjaman "${p.judulBuku}" dari ${p.namaPeminjam} telah ditolak.',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+                actions: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D47A1),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ),
+                ],
+              ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[REJECT ERROR] $e');
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menolak permintaan: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ============================================================
+  // HANDLER: Setujui permintaan peminjaman
+  // ============================================================
+  Future<void> _handleApprove(PeminjamanModel p) async {
+    final pId = p.id;
+    if (pId == null) {
+      debugPrint('[APPROVE] p.id is null, aborting');
+      return;
+    }
+
+    if (!Throttle.allow('approve_$pId')) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.green,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Setujui Peminjaman?',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Setujui permintaan peminjaman berikut?'),
+                const SizedBox(height: 12),
+                _buildApproveInfoRow(Icons.book_outlined, 'Buku', p.judulBuku),
+                const SizedBox(height: 6),
+                _buildApproveInfoRow(
+                  Icons.person_outline,
+                  'Peminjam',
+                  p.namaPeminjam,
+                ),
+                const SizedBox(height: 6),
+                _buildApproveInfoRow(
+                  Icons.format_list_numbered,
+                  'Jumlah',
+                  '${p.jumlah} buku',
+                ),
+                if (p.kelas != null && p.kelas!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _buildApproveInfoRow(
+                    Icons.school_outlined,
+                    'Kelas',
+                    p.kelas!,
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Batal'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4CAF50),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text('Ya, Setujui'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      debugPrint('[APPROVE] Calling approvePeminjaman($pId)...');
+      await _firestoreService.approvePeminjaman(pId);
+      debugPrint('[APPROVE] Berhasil menyetujui peminjaman $pId');
+
+      // Close loading
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+
+      if (mounted) {
+        SuccessPopup.show(
+          context,
+          title: 'Peminjaman Disetujui!',
+          subtitle:
+              '"${p.judulBuku}" untuk ${p.namaPeminjam} berhasil disetujui.',
+        );
+      }
+    } catch (e) {
+      debugPrint('[APPROVE ERROR] $e');
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menyetujui: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildApproveInfoRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: Colors.grey[600]),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
     );
   }
 }

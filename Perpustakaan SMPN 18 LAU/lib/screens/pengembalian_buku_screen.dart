@@ -479,10 +479,13 @@ class _PengembalianBukuScreenState extends State<PengembalianBukuScreen> {
               child: Text('Tidak ada buku yang perlu dikembalikan.'),
             );
           }
-          // Ambil semua, lalu filter yang masih ada sisa buku dipinjam (jumlah > jumlah_kembali)
+          // Ambil semua, lalu filter yang statusnya 'dipinjam' dan masih ada sisa buku dipinjam (jumlah > jumlah_kembali)
           final docs =
               snapshot.data!.docs.where((doc) {
                 final data = doc.data();
+                final status = (data['status'] ?? '') as String;
+                // Hanya tampilkan yang sudah disetujui (dipinjam)
+                if (status != 'dipinjam') return false;
                 final total = (data['jumlah'] ?? 1) as int;
                 final kembali = (data['jumlah_kembali'] ?? 0) as int;
                 return (total - kembali) > 0;

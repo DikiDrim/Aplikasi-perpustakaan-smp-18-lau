@@ -1,25 +1,31 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/ars_notification_model.dart';
+import '../models/ars_result_model.dart';
 import '../models/buku_model.dart';
 import '../models/replenishment_order_model.dart';
 import 'firestore_service.dart';
 import 'notification_service.dart';
 
-/// Automatic Replenishment System (ARS) Service - CLEAN VERSION
+/// Automatic Replenishment System (ARS) Service
 ///
 /// Ketentuan ARS:
-/// a. Sistem ARS dijalankan setiap kali ada perubahan stok (peminjaman/pengembalian)
-/// b. Stok awal = stok sebelum transaksi peminjaman
-/// c. Total peminjaman harian = transaksi peminjaman pada tanggal yang sama
-/// d. Stok akhir = stok_awal - total_peminjaman_harian
-/// e. Cegah peminjaman jika stok_akhir <= 0
-/// f. ARS aktif jika: stok_akhir <= safety_stock
-/// g. Notifikasi muncul setiap kali stok menyentuh safety_stock
-/// h. Notifikasi merepresentasikan kondisi stok saat ini
-/// i. Hindari perhitungan ganda
-/// j. Validasi: stok_awal >= total_peminjaman_harian
-
+/// 1. Perhitungan berdasarkan KATEGORI buku.
+/// 2. Data input: array jumlah peminjaman harian selama 7 hari.
+/// 3. Total stok tersedia dari database.
+/// 4. Lead time (L) = 3 hari.
+/// 5. Service level 95% → Z = 1.65.
+/// 6. Sistem TIDAK melakukan pemesanan otomatis.
+/// 7. Sistem hanya menampilkan notifikasi rekomendasi pengadaan ulang.
+///
+/// Rumus:
+/// - Rata-rata permintaan harian: D̅ = total_peminjaman / jumlah_hari
+/// - Standar deviasi: σ = sqrt( Σ(Xi - D̅)² / n )
+/// - Safety Stock: SS = Z × σ × √L
+/// - Reorder Point: ROP = (D̅ × L) + SS
+/// - Stok saat ini: langsung dari DB (buku perpustakaan dikembalikan)
+/// - Jika stok_saat_ini ≤ ROP → notifikasi pengadaan ulang
+/// - Jika stok_saat_ini > ROP → stok aman
 class ArsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirestoreService _firestoreService = FirestoreService();
@@ -27,11 +33,187 @@ class ArsService {
   final String _replenishmentCollection = 'replenishment_orders';
   final String _booksCollection = 'books';
   final String _notificationsCollection = 'ars_notifications';
+  final String _peminjamanCollection = 'peminjaman';
+
+  /// Konstanta ARS
+  static const int defaultLeadTime = 3; // hari
+  static const double defaultNilaiZ = 1.65; // service level 95%
+  static const int defaultJumlahHari = 7; // observasi 7 hari
 
   ArsService();
 
-  /// === MAIN METHOD ===
-  /// Dipanggil REALTIME setiap kali ada transaksi peminjaman
+  // ════════════════════════════════════════════════════════════════════════════
+  // CORE: Perhitungan ARS per Kategori
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /// Ambil data peminjaman harian selama [jumlahHari] terakhir
+  /// untuk SEMUA buku dalam satu [kategori].
+  ///
+  /// Returns List<int> dengan panjang [jumlahHari], masing-masing berisi
+  /// total peminjaman pada hari tersebut.
+  Future<List<int>> _getPeminjamanHarianByKategori(
+    String kategori, {
+    int jumlahHari = defaultJumlahHari,
+  }) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    // Ambil semua buku dalam kategori ini
+    final bukuSnap =
+        await _firestore
+            .collection(_booksCollection)
+            .where('kategori', isEqualTo: kategori)
+            .get();
+
+    final bukuIds = bukuSnap.docs.map((d) => d.id).toList();
+    if (bukuIds.isEmpty) {
+      return List.filled(jumlahHari, 0);
+    }
+
+    // Inisialisasi array 7 hari dengan 0
+    final List<int> dailyCounts = List.filled(jumlahHari, 0);
+
+    // Tanggal mulai = 7 hari lalu (termasuk hari ini)
+    final startDate = today.subtract(Duration(days: jumlahHari - 1));
+
+    // Query per buku_id (tanpa composite index) – lalu filter tanggal di memory
+    final bukuIdSet = bukuIds.toSet();
+
+    // Query berdasarkan tanggal saja (single inequality, tidak butuh composite index)
+    final snap =
+        await _firestore
+            .collection(_peminjamanCollection)
+            .where(
+              'tanggal_pinjam',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+            )
+            .get();
+
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final docBukuId = data['buku_id'] as String? ?? '';
+
+      // Filter hanya buku dalam kategori ini
+      if (!bukuIdSet.contains(docBukuId)) continue;
+
+      // Hanya hitung peminjaman yang benar-benar terjadi (bukan pending/ditolak)
+      final status = (data['status'] ?? '') as String;
+      if (status == 'pending' || status == 'ditolak') continue;
+
+      final tanggalRaw = data['tanggal_pinjam'];
+      DateTime tanggalPinjam;
+      if (tanggalRaw is Timestamp) {
+        tanggalPinjam = tanggalRaw.toDate();
+      } else if (tanggalRaw is DateTime) {
+        tanggalPinjam = tanggalRaw;
+      } else {
+        continue;
+      }
+
+      final tanggalDate = DateTime(
+        tanggalPinjam.year,
+        tanggalPinjam.month,
+        tanggalPinjam.day,
+      );
+
+      // Hitung index hari (0 = hari tertua, 6 = hari ini)
+      final dayIndex = tanggalDate.difference(startDate).inDays;
+      if (dayIndex >= 0 && dayIndex < jumlahHari) {
+        final jumlah = (data['jumlah'] ?? 1) as num;
+        dailyCounts[dayIndex] += jumlah.toInt();
+      }
+    }
+
+    return dailyCounts;
+  }
+
+  /// Hitung total stok untuk semua buku dalam satu [kategori].
+  Future<int> _getTotalStokByKategori(String kategori) async {
+    final snap =
+        await _firestore
+            .collection(_booksCollection)
+            .where('kategori', isEqualTo: kategori)
+            .get();
+
+    int totalStok = 0;
+    for (final doc in snap.docs) {
+      totalStok += ((doc.data()['stok'] ?? 0) as num).toInt();
+    }
+    return totalStok;
+  }
+
+  /// Jalankan perhitungan ARS untuk SATU kategori.
+  ///
+  /// Returns [ArsResultModel] berisi semua hasil perhitungan.
+  Future<ArsResultModel> calculateArsForKategori(String kategori) async {
+    // 1. Ambil data peminjaman harian 7 hari terakhir
+    final peminjamanHarian = await _getPeminjamanHarianByKategori(kategori);
+
+    // 2. Ambil total stok dari DB
+    final totalStok = await _getTotalStokByKategori(kategori);
+
+    // 3. Hitung jumlah buku
+    final bukuSnap =
+        await _firestore
+            .collection(_booksCollection)
+            .where('kategori', isEqualTo: kategori)
+            .get();
+    final jumlahBuku = bukuSnap.docs.length;
+
+    // 4. Lakukan perhitungan menggunakan model
+    final result = ArsResultModel.calculate(
+      kategori: kategori,
+      peminjamanHarian: peminjamanHarian,
+      stokAwal: totalStok,
+      leadTime: defaultLeadTime,
+      nilaiZ: defaultNilaiZ,
+      jumlahBuku: jumlahBuku,
+    );
+
+    print(result); // Log hasil
+
+    return result;
+  }
+
+  /// Jalankan perhitungan ARS untuk SEMUA kategori.
+  ///
+  /// Returns list [ArsResultModel] per kategori, sorted:
+  /// - Kategori 'Perlu Pengadaan Ulang' di atas
+  /// - Kemudian diurutkan berdasarkan stok akhir (ascending)
+  Future<List<ArsResultModel>> runArsAllKategori() async {
+    // Ambil semua kategori unik dari koleksi buku
+    final bukuSnap = await _firestore.collection(_booksCollection).get();
+
+    final Set<String> kategoriSet = {};
+    for (final doc in bukuSnap.docs) {
+      final kat = doc.data()['kategori'] as String? ?? '';
+      if (kat.isNotEmpty) kategoriSet.add(kat);
+    }
+
+    final results = <ArsResultModel>[];
+    for (final kategori in kategoriSet) {
+      final result = await calculateArsForKategori(kategori);
+      results.add(result);
+    }
+
+    // Sort: perlu pengadaan dulu, lalu berdasarkan stok akhir ascending
+    results.sort((a, b) {
+      if (a.perluPengadaan && !b.perluPengadaan) return -1;
+      if (!a.perluPengadaan && b.perluPengadaan) return 1;
+      return a.stokAkhir.compareTo(b.stokAkhir);
+    });
+
+    return results;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // TRANSAKSI: Cek ARS saat ada peminjaman
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /// Dipanggil setiap kali ada transaksi peminjaman.
+  ///
+  /// Melakukan perhitungan ARS per-kategori buku yang bersangkutan, lalu
+  /// menyimpan notifikasi jika stok_akhir ≤ ROP.
   ///
   /// Parameter:
   /// - bukuId: ID buku
@@ -48,15 +230,12 @@ class ArsService {
     print('  Jumlah Dipinjam: $jumlahDipinjam');
 
     try {
-      // VALIDASI: Jumlah transaksi harus valid
       if (jumlahDipinjam <= 0) {
         print('  ❌ ERROR: Jumlah peminjaman harus > 0');
         return null;
       }
 
-      // Ambil data buku untuk cek isArsEnabled, safetyStock, stokAwal dll
-      // PENTING: Kita TIDAK menggunakan buku.stok karena bisa stale dari cache!
-      // Kita menggunakan stokSetelahTransaksi yang dihitung langsung dari transaksi.
+      // Ambil data buku untuk mengetahui kategori
       final docBuku =
           await _firestore.collection(_booksCollection).doc(bukuId).get();
       if (!docBuku.exists) {
@@ -69,72 +248,82 @@ class ArsService {
         docBuku.id,
       );
 
-      // Gunakan stok yang LANGSUNG dari parameter (bukan dari DB/cache)
-      final int stokAkhirAktual = stokSetelahTransaksi;
-      final int stokSebelumAktual = stokAkhirAktual + jumlahDipinjam;
+      print('  Buku: ${buku.judul}');
+      print('  Kategori: ${buku.kategori}');
 
-      print('  Stok Setelah Transaksi (param langsung): $stokAkhirAktual');
-      print('  Stok Sebelum (rekonstruksi): $stokSebelumAktual');
-      print('  isArsEnabled (from DB): ${buku.isArsEnabled}');
+      // ── Perhitungan ARS per KATEGORI ──
+      final arsResult = await calculateArsForKategori(buku.kategori);
 
-      // ARS selalu aktif - field is_ars_enabled bisa salah karena bug edit sebelumnya
-      // Jika di masa depan ingin nonaktifkan ARS per buku, bisa diaktifkan kembali
-      // if (!buku.isArsEnabled) {
-      //   print('  ⚠️ ARS tidak enabled untuk buku ini');
-      //   return null;
-      // }
+      // Gunakan stok SETELAH transaksi (bukan stok DB yang mungkin sudah
+      // naik kembali karena pengembalian). Di perpustakaan buku dikembalikan
+      // sehingga stok DB selalu tinggi. Yang relevan adalah stok SAAT INI
+      // setelah peminjaman terjadi.
+      final effectiveStok = stokSetelahTransaksi;
 
-      // Safety stock adaptif: jika buku punya safetyStock manual, gunakan itu.
-      // Jika tidak, hitung otomatis berdasarkan stok awal.
-      final int safetyStock;
-      if (buku.safetyStock != null) {
-        safetyStock = buku.safetyStock!;
-      } else {
-        // Default: 30% dari stok awal, minimal 1, maksimal 5
-        final stokRef = buku.stokAwal ?? stokSebelumAktual;
-        safetyStock = (stokRef * 0.3).ceil().clamp(1, 5);
-      }
+      print('  === Hasil ARS (Kategori: ${buku.kategori}) ===');
+      print('  Peminjaman Harian: ${arsResult.peminjamanHarian}');
+      print(
+        '  D̅ (rata-rata): ${arsResult.rataRataPermintaan.toStringAsFixed(4)}',
+      );
+      print('  σ (std dev): ${arsResult.standarDeviasi.toStringAsFixed(4)}');
+      print('  SS (safety stock): ${arsResult.safetyStock.toStringAsFixed(4)}');
+      print(
+        '  ROP (reorder point): ${arsResult.reorderPoint.toStringAsFixed(4)}',
+      );
+      print('  Stok Kategori (DB): ${arsResult.stokAkhir}');
+      print('  Stok Buku Setelah Transaksi: $effectiveStok');
+      print('  Status: ${arsResult.statusStok}');
+
       final now = DateTime.now();
 
-      // PERHITUNGAN FINAL (menggunakan data aktual dari Firestore)
-      final stokAwal = stokSebelumAktual; // STOK AWAL (sebelum transaksi ini)
-      final totalPeminjamanHariIni = jumlahDipinjam; // JUMLAH DIPINJAM KALI INI
-      final stokAkhirHitung = stokAkhirAktual; // STOK AKHIR (aktual dari DB)
+      // Cek apakah stok ≤ ROP → notifikasi pengadaan ulang
+      // Gunakan stok setelah transaksi (effectiveStok) karena di perpustakaan
+      // buku yang dikembalikan membuat stok DB selalu tinggi, tapi yang
+      // penting adalah stok SAAT peminjaman terjadi.
+      final perluPengadaan = effectiveStok <= arsResult.reorderPoint;
 
-      print('  Buku: ${buku.judul}');
-      print('  Stok Awal: $stokAwal');
-      print('  Total Peminjaman Hari Ini: $totalPeminjamanHariIni');
-      print('  Stok Akhir: $stokAkhirHitung');
-      print('  Safety Stock: $safetyStock');
-
-      // CEK KONDISI ARS: stok_akhir <= safety_stock?
-      if (stokAkhirHitung <= safetyStock) {
+      if (perluPengadaan) {
         print(
-          '  ✓✓✓ STOK KRITIS! (Stok Akhir $stokAkhirHitung <= Safety Stock $safetyStock)',
+          '  ⚠️ STOK PERLU PENGADAAN! (Stok $effectiveStok ≤ ROP ${arsResult.reorderPoint.toStringAsFixed(2)})',
         );
 
-        // Hitung jumlah pengadaan: berapa buku perlu diadakan agar stok kembali ke safety stock, minimal 1
-        final jumlahPengadaan = (safetyStock - stokAkhirHitung).clamp(
-          1,
-          safetyStock,
-        );
+        // Hitung jumlah rekomendasi pengadaan:
+        // selisih antara ROP dan stok saat ini, minimal 1
+        final jumlahPengadaan = (arsResult.reorderPoint.ceil() - effectiveStok)
+            .clamp(1, 9999);
 
         final notification = ArsNotificationModel(
-          bukuId: buku.id!,
-          judulBuku: buku.judul,
-          stokAwal: stokAwal,
-          stokAkhir: stokAkhirHitung,
-          totalPeminjaman: totalPeminjamanHariIni,
-          safetyStock: safetyStock,
+          bukuId: bukuId,
+          judulBuku: arsResult.kategori, // gunakan nama kategori
+          stokAwal: arsResult.stokAwal,
+          stokAkhir: effectiveStok,
+          totalPeminjaman: arsResult.totalPeminjaman,
+          safetyStock: arsResult.safetyStock.ceil(),
           jumlahPengadaan: jumlahPengadaan,
           status: 'unread',
           tanggalNotifikasi: now,
-          detailPeminjaman: [
-            {
-              'tanggal': now.toIso8601String(),
-              'jumlah': totalPeminjamanHariIni,
-            },
-          ],
+          detailPeminjaman: List.generate(arsResult.peminjamanHarian.length, (
+            i,
+          ) {
+            final date = DateTime.now().subtract(
+              Duration(days: arsResult.jumlahHari - 1 - i),
+            );
+            return {
+              'tanggal':
+                  '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+              'jumlah': arsResult.peminjamanHarian[i],
+            };
+          }),
+          // Field ARS statistik
+          kategori: arsResult.kategori,
+          peminjamanHarian: arsResult.peminjamanHarian,
+          rataRataPermintaan: arsResult.rataRataPermintaan,
+          standarDeviasi: arsResult.standarDeviasi,
+          safetyStockCalc: arsResult.safetyStock,
+          reorderPoint: arsResult.reorderPoint,
+          statusStok: arsResult.statusStok,
+          leadTime: arsResult.leadTime,
+          nilaiZ: arsResult.nilaiZ,
         );
 
         // Simpan notifikasi
@@ -146,25 +335,25 @@ class ArsService {
         // Push ke admin
         await NotificationService.showNotificationToAllAdmins(
           id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          title: 'Rekomendasi Pengadaan Ulang Buku',
+          title: 'Rekomendasi Pengadaan Ulang',
           body:
-              '${buku.judul}: Stok awal $stokAwal, peminjaman hari ini $totalPeminjamanHariIni, sisa stok $stokAkhirHitung <= safety stock $safetyStock. Disarankan pesan $jumlahPengadaan buku.',
+              'Kategori "${arsResult.kategori}": Stok $effectiveStok ≤ ROP ${arsResult.reorderPoint.toStringAsFixed(2)}. '
+              'Disarankan tambah $jumlahPengadaan buku.',
           type: 'ars',
           data: {
-            'buku_id': buku.id,
-            'judul_buku': buku.judul,
-            'stok_awal': stokAwal,
-            'stok_akhir': stokAkhirHitung,
-            'safety_stock': safetyStock,
+            'kategori': arsResult.kategori,
+            'stok_awal': arsResult.stokAwal,
+            'stok_akhir': effectiveStok,
+            'reorder_point': arsResult.reorderPoint,
+            'safety_stock': arsResult.safetyStock,
             'jumlah_pengadaan': jumlahPengadaan,
-            'total_peminjaman_hari_ini': totalPeminjamanHariIni,
           },
         );
 
         return notification;
       } else {
         print(
-          '  ✓ Stok masih aman (Stok Akhir $stokAkhirHitung > Safety Stock $safetyStock)',
+          '  ✓ Stok aman (Stok $effectiveStok > ROP ${arsResult.reorderPoint.toStringAsFixed(2)})',
         );
         return null;
       }
@@ -173,6 +362,10 @@ class ArsService {
       rethrow;
     }
   }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // NOTIFICATIONS
+  // ════════════════════════════════════════════════════════════════════════════
 
   /// Get unread notifications
   Stream<List<ArsNotificationModel>> getUnreadNotificationsStream() {
@@ -268,6 +461,10 @@ class ArsService {
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // REPLENISHMENT ORDERS (legacy — tetap dipertahankan untuk kompatibilitas)
+  // ════════════════════════════════════════════════════════════════════════════
+
   /// Create replenishment order
   Future<void> createReplenishmentOrder(ReplenishmentOrderModel order) async {
     try {
@@ -331,7 +528,7 @@ class ArsService {
     await updateOrderStatus(orderId, 'dibatalkan', catatan: reason);
   }
 
-  /// Force check all books (for compatibility/testing)
+  /// Force check all categories (for dashboard / manual trigger)
   Future<List<ReplenishmentOrderModel>>
   checkAndCreateReplenishmentOrders() async {
     final notifications = await getNotifications(unreadOnly: true);
@@ -352,7 +549,7 @@ class ArsService {
     return created;
   }
 
-  /// Get all replenishment orders (for dashboard compatibility)
+  /// Get all replenishment orders
   Future<List<ReplenishmentOrderModel>> getReplenishmentOrders() async {
     try {
       final snapshot =
@@ -370,16 +567,17 @@ class ArsService {
     }
   }
 
-  /// Get books with low stock (stok <= safety_stock)
+  // ════════════════════════════════════════════════════════════════════════════
+  // DASHBOARD HELPERS
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /// Get books with low stock (backward compatible)
   Future<List<Map<String, dynamic>>> getLowStockBooks() async {
     try {
       final bukuList = await _firestoreService.getBuku();
       final lowStockBooks = <Map<String, dynamic>>[];
 
       for (final buku in bukuList) {
-        if (!buku.isArsEnabled) continue;
-
-        // Safety stock adaptif: manual jika diset, atau 30% dari stok awal
         final int safetyStock;
         if (buku.safetyStock != null) {
           safetyStock = buku.safetyStock!;

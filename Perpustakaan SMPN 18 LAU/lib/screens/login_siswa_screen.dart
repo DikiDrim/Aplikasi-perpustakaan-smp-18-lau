@@ -35,8 +35,13 @@ class _LoginSiswaScreenState extends State<LoginSiswaScreen> {
           _usernameController.text.trim(),
           _passwordController.text,
         );
-        if (mounted)
-          Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/student-dashboard',
+            (route) => false,
+          );
+        }
       }, message: '');
     } on Exception catch (e) {
       debugPrint('Login siswa error: $e');
